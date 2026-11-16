@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 TRACKER_URL = "https://github.com/1takawa/rob-run-hub-"
 DISCORD_APPLICATION_ID = "1571948762367262760"
 SMALL_ASSET_KEY = "hidden_pool"
-RPC_UPDATE_INTERVAL = 15.0
+RPC_UPDATE_INTERVAL = 15.0   # Discord itself allows one update in 15 s
 ROLE_LABELS = {
     "criminal": "Грабитель",
     "police": "Полицейский",
@@ -25,6 +25,9 @@ LOCATION_ASSETS = {
     "looty_bay": ("Лути-Бей", "location_looty_bay"),
     "motel_lenny": ("Мотель Лени", "location_motel_lenny"),
     "prison": ("Тюрьма", "location_prison"),
+    "events_center": ("Центр событий", "location_map"),
+    "city": ("Город", "location_map"),
+    "plot": ("На участке", "location_hidden"),     # whose and where is not said
 }
 HIDDEN_LOCATION_ASSET = "location_hidden"
 

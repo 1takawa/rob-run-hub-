@@ -27,15 +27,17 @@ import cv2
 import numpy as np
 
 from .loadout_vision import duty_badge_box
+from .places import DEFAULTS, PlaceNames, place_code
 from .reconnect import PlayerLog
 from .seasons import SeasonStore
 
 logger = logging.getLogger(__name__)
 
-TICK = 2.0             # seconds between looks
-GONE_LOOKS = 4         # looks without the shield before a shift counts as ended
+TICK = 2.0             # seconds between reads of Player.log (free: no screen)
+LOOK_EVERY = 6.0       # seconds between looks at the screen in a match (the duty shield)
+GONE_LOOKS = 3         # looks without the shield before a shift counts as ended
 MENU_EVERY = 30.0      # seconds between readings of the server age in the main menu
-PRESENCE_HUD_EVERY = 8.0  # role and party are read from the small, fixed HUD labels
+PARTY_EVERY = 30.0     # seconds between readings of the small party / role labels of the HUD
 
 
 class _Ocr:
@@ -127,7 +129,7 @@ def read_duty_counter(frame_rgb: np.ndarray, ocr: _Ocr) -> tuple[bool, int | Non
     left = max(0, x - int(7 * h))
     digits = frame_rgb[max(0, y - h // 2):y + h + h // 2, left:max(left + 1, x - 2)].max(axis=2)
     votes: Counter = Counter()
-    for image in _variants(digits):
+    for image in _variants(digits)[:4]:       # four passes are enough for a number; each pass costs the game frames
         for text in ocr.lines(image):
             number = re.sub(r"[^\d]", "", text.replace("O", "0").replace("О", "0").replace("о", "0"))
             if number:
@@ -161,26 +163,6 @@ def read_presence_hud(frame_rgb: np.ndarray, ocr: _Ocr) -> tuple[str | None, boo
     return role, in_party
 
 
-def read_named_location(frame_rgb: np.ndarray, ocr: _Ocr) -> str | None:
-    """Read only explicit public-place names in the world view; everything else stays private/unknown."""
-    height, width = frame_rgb.shape[:2]
-    map_panel = frame_rgb[int(height * 0.90):int(height * 0.985), int(width * 0.32):int(width * 0.68)]
-    map_text = _read_hud_text(map_panel, ocr)
-    map_labels = ("МОТЕЛЬЛЕНИ", "ЛУТИБЕЙ", "ЦЕНТРСОБЫТИЙ")
-    if sum(marker in map_text for marker in map_labels) >= 2:
-        return "map"
-
-    world = frame_rgb[int(height * 0.06):int(height * 0.76), int(width * 0.14):int(width * 0.86)]
-    text = _read_hud_text(world, ocr)
-    if any(marker in text for marker in ("LOOTYBAY", "ЛУТИБЕЙ", "ЛУТИ-БЕЙ")):
-        return "looty_bay"
-    if "MOTEL" in text or "МОТЕЛЬЛЕНИ" in text:
-        return "motel_lenny"
-    if any(marker in text for marker in ("CORRECTIONAL", "PRISON", "ТЮРЬМ")):
-        return "prison"
-    return None
-
-
 def _read_hud_text(crop: np.ndarray, ocr: _Ocr) -> str:
     if not crop.size:
         return ""
@@ -193,7 +175,8 @@ def _read_hud_text(crop: np.ndarray, ocr: _Ocr) -> str:
 
 class GameWatcher(threading.Thread):
     def __init__(self, get_screen: Callable[[], object | None], seasons: SeasonStore,
-                 on_change: Callable[[], None] | None = None, log: PlayerLog | None = None) -> None:
+                 on_change: Callable[[], None] | None = None, log: PlayerLog | None = None,
+                 places: PlaceNames | None = None) -> None:
         super().__init__(name="game-watch", daemon=True)
         self.get_screen = get_screen
         self.seasons = seasons
@@ -206,10 +189,14 @@ class GameWatcher(threading.Thread):
         self.role: str | None = None
         self.in_party: bool | None = None
         self._presence_read_at = 0.0
-        self.location_key: str | None = None
-        self._location_candidate: str | None = None
-        self._location_hits = 0
-        self._location_read_at = 0.0
+        self._look_at = 0.0
+        self.places = places
+        self.place_role: str | None = None      # from Player.log: the role in the place («hubber», «settler» ...)
+        self.place_server: str | None = None    # «shooter» or «battle»
+        self.on_map = False
+        if self.in_match:
+            self.see_log(getattr(self.log, "tail_events", list)())   # the hub started with the player in a place already
+            self.in_match = True
         self.log.read_new()          # from now on only new lines
         # the cop shift
         self.shift_value: int | None = None    # the last number read on the counter
@@ -264,12 +251,40 @@ class GameWatcher(threading.Thread):
             except Exception:
                 logger.debug("game watch tick failed", exc_info=True)
 
+    def see_log(self, events: list[str]) -> None:
+        """The place from Player.log: main menu, the map, or a place known by its code (also used by the tests)."""
+        for event in events:
+            if event in ("battle", "lobby", "realm"):
+                self.in_match = event != "lobby"
+                self.place_role, self.place_server, self.on_map = None, None, event == "realm"
+            elif event.startswith("server:"):
+                self.place_server = event.split(":", 1)[1]
+            elif event.startswith("role:"):
+                self.place_role = event.split(":", 1)[1]
+                logger.info("place: role=%s server=%s", self.place_role, self.place_server)
+
+    @property
+    def place(self) -> str | None:
+        return place_code(self.place_role, self.place_server)
+
+    @property
+    def location_key(self) -> str | None:
+        if not self.in_match:
+            return None
+        if self.on_map:
+            return "map"
+        key = self.places.get(self.place) if self.places is not None else DEFAULTS.get(self.place or "")
+        return None if key in (None, "hidden") else key
+
+    @staticmethod
+    def _capture(screen) -> np.ndarray | None:
+        try:
+            return np.asarray(screen.capture())
+        except Exception:
+            return None   # the game is in the background: nothing to see now
+
     def _tick(self, elapsed: float) -> None:
-        for event in self.log.read_new():
-            if event == "battle":
-                self.in_match = True
-            elif event == "lobby":
-                self.in_match = False
+        self.see_log(self.log.read_new())
         screen = self.get_screen()
         open_ = bool(screen is not None and screen.is_target_open())
         if not open_:
@@ -277,57 +292,42 @@ class GameWatcher(threading.Thread):
         self.seasons.roll_over()
         if open_ and self.in_match:
             self.seasons.add_playtime(min(elapsed, 3 * TICK))
-        frame = None
-        if open_:
-            try:
-                frame = np.asarray(screen.capture())
-            except Exception:
-                frame = None   # the game is in the background: nothing to see now
+        now = time.monotonic()
         if not self.in_match:
             self.on_duty = None
             self.role = None
             self.in_party = None
-            self.location_key = None
-            self._location_candidate = None
-            self._location_hits = 0
             self.see_counter(False, None)      # in the menu or the game is gone: no shift goes on
-            if frame is not None and time.monotonic() - self._menu_at > MENU_EVERY:
-                self._menu_at = time.monotonic()
-                age = read_server_age(frame, self.ocr)
+            # the screen is taken only when it is read: once in MENU_EVERY
+            if open_ and now - self._menu_at > MENU_EVERY:
+                self._menu_at = now
+                frame = self._capture(screen)
+                age = read_server_age(frame, self.ocr) if frame is not None else None
                 if age is not None:
                     started = time.time() - age
                     self.seasons.data["last_server_start"] = started
                     if self.seasons.correct_start(started) and self.on_change:
                         self.on_change()
             return
-        if frame is not None:
-            visible, value = read_duty_counter(frame, self.ocr)
-            self.on_duty = visible
-            self.see_counter(visible, value)
-            if time.monotonic() - self._presence_read_at >= PRESENCE_HUD_EVERY:
-                self._presence_read_at = time.monotonic()
-                self.role, self.in_party = read_presence_hud(frame, self.ocr)
-            if visible:
-                self.role = "police"
-            if time.monotonic() - self._location_read_at >= PRESENCE_HUD_EVERY:
-                self._location_read_at = time.monotonic()
-                found = read_named_location(frame, self.ocr)
-                if found is None:
-                    self._location_candidate = None
-                    self._location_hits = 0
-                    self.location_key = None
-                elif found == self._location_candidate:
-                    self._location_hits += 1
-                    if self._location_hits >= 2:
-                        self.location_key = found
-                else:
-                    self._location_candidate = found
-                    self._location_hits = 1
-        else:
+        if not open_ or now - self._look_at < LOOK_EVERY:
+            return
+        self._look_at = now
+        frame = self._capture(screen)
+        if frame is None:
             self.on_duty = None
-            self.role = None
-            self.in_party = None
-            self.location_key = None
+            return
+        visible, value = read_duty_counter(frame, self.ocr)
+        self.on_duty = visible
+        self.see_counter(visible, value)
+        if visible:
+            self.role = "police"
+        if not self.on_map and now - self._presence_read_at >= PARTY_EVERY:
+            self._presence_read_at = now
+            role, party = read_presence_hud(frame, self.ocr)
+            if not visible:
+                self.role = role
+            if party is not None:
+                self.in_party = party          # an unread label keeps the last answer
 
     def stop(self) -> None:
         self.stop_event.set()

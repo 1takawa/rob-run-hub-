@@ -12,6 +12,7 @@ from PIL import Image, ImageTk
 
 from ..loot import LootItem
 from ..models import InteractionCalibration, Profile
+from ..places import CHOICES as PLACE_CHOICES
 from .theme import (COLORS, FONT_SEMI, Block, Card, HelpTip, PillButton, ScrollPage, Segmented, Toggle, label, page_header,
                     settings_row)
 
@@ -65,6 +66,9 @@ class SettingsPage(tk.Frame):
         self.discord_show_party_var = tk.BooleanVar(value=profile.discord_show_party)
         self.discord_show_earnings_var = tk.BooleanVar(value=profile.discord_show_earnings)
         self.discord_show_hours_var = tk.BooleanVar(value=profile.discord_show_hours)
+        self.place_var = tk.StringVar(value="")
+        self.place_note = tk.StringVar(value="")
+        self._place_code: str | None = None
         self.hotkey_help = tk.StringVar(value="")
         self.route_state = tk.StringVar(value="Маршрут не записан")
         self.route_detail = tk.StringVar(value="")
@@ -137,11 +141,19 @@ class SettingsPage(tk.Frame):
         card = self._group(body, "Discord Rich Presence")
         control = settings_row(card, "Показывать активность в Discord", "Выключение очищает карточку и закрывает соединение.", first=True)
         Toggle(control, self.discord_enabled_var, command=self._save_discord_settings).pack(side="right")
-        label(card.body, "Статус игры и безопасная локация показываются всегда. Жилые дома и участки скрываются; "
-              "точные координаты не передаются. Остальные данные можно включать отдельно.",
+        label(card.body, "Статус игры и место показываются всегда. Свой участок — просто «На участке», без адреса; "
+              "координаты не передаются. Остальное включается отдельно.",
               size=9, color="muted", bg=card.fill, wraplength=560, justify="left").pack(anchor="w")
         label(card.body, "", size=9, color="muted", bg=card.fill, textvariable=self.discord_status).pack(
             anchor="w", pady=(10, 0))
+        # the place: the game writes a code of it to Player.log; its name is told here once
+        control = settings_row(card, "Где ты сейчас", "Место берётся из журнала игры, экран не читается. Новое место "
+                               "назови один раз — дальше трекер узнает его сам.")
+        self.place_combo = ttk.Combobox(control, textvariable=self.place_var, values=list(PLACE_CHOICES.values()),
+                                        state="disabled", width=16)
+        self.place_combo.pack(side="right")
+        self.place_combo.bind("<<ComboboxSelected>>", lambda _e: self._name_place())
+        label(control, "", size=9, color="green", bg=card.fill, textvariable=self.place_note).pack(side="right", padx=(0, 10))
         options = (
             ("Полный штат и название", "Если выключить: EU-?????? / NA-?????? без названия штата.", self.discord_show_server_var),
             ("Роль персонажа", "Берётся автоматически из игры.", self.discord_show_role_var),
@@ -170,6 +182,27 @@ class SettingsPage(tk.Frame):
 
     def set_discord_status(self, value: str) -> None:
         self.discord_status.set(value)
+
+    def show_place(self, code: str | None, name: str | None) -> None:
+        """``code`` None: a place that needs no name (``name`` says it). Otherwise ``name`` is the key or None."""
+        self._place_code = code
+        if code is None:
+            self.place_note.set(name or "")
+            self.place_combo.configure(state="disabled")
+            if self.place_var.get():
+                self.place_var.set("")
+            return
+        self.place_note.set("НОВОЕ — НАЗОВИ" if name is None else "")
+        self.place_combo.configure(state="readonly")
+        if self.focus_get() is not self.place_combo:
+            self.place_var.set(PLACE_CHOICES.get(name or "", ""))
+
+    def _name_place(self) -> None:
+        key = next((k for k, v in PLACE_CHOICES.items() if v == self.place_var.get()), None)
+        callback = self.callbacks.get("place_named")
+        if key and self._place_code and callback is not None:
+            callback(self._place_code, key)
+            self.place_note.set("")
 
     def _build_route(self, body: tk.Frame) -> None:
         card = self._group(body, "Путь до столов")

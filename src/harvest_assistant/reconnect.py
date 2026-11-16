@@ -29,6 +29,9 @@ PLAYER_LOG = Path.home() / "AppData" / "LocalLow" / "Kefir" / "ROB RUN" / "Playe
 LOBBY = b'NetworkStep - Changed on "WaitStartMainMenuInput"'
 BATTLE = b'NetworkStep - Changed on "InBattle"'
 SPAWNED = b"[Info] Init state:"
+REALM = b'NetworkStep - Changed on "InRealmNotInBattle"'   # the map between places
+ROLE = b"[Info] Init role: "                                  # the role in the place just entered
+BATTLE_HOST = b"ConnectUpdater.GetAddress started id=battle host="
 
 MAX_ATTEMPTS = 5            # tries per kick
 MAX_PER_HOUR = 10           # reconnects per hour before giving up (a loop of kicks is not normal)
@@ -79,14 +82,34 @@ class PlayerLog:
         if not newline:
             return []
         self._offset += len(complete) + 1
+        return self.parse(complete.split(b"\n"))
+
+    def tail_events(self, size: int = 700_000) -> list[str]:
+        """The events of the last part of the log (where the player is when the hub starts)."""
+        try:
+            with self.path.open("rb") as log:
+                log.seek(max(0, os.fstat(log.fileno()).st_size - size))
+                return self.parse(log.read().split(b"\n"))
+        except OSError:
+            return []
+
+    @staticmethod
+    def parse(lines: list[bytes]) -> list[str]:
         events = []
-        for line in complete.split(b"\n"):
+        for line in lines:
             if LOBBY in line:
                 events.append("lobby")
             elif BATTLE in line:
                 events.append("battle")
             elif line.startswith(SPAWNED):
                 events.append("spawned")
+            elif REALM in line:
+                events.append("realm")
+            elif line.startswith(ROLE):
+                events.append("role:" + line[len(ROLE):].strip().decode("utf-8", "replace"))
+            elif BATTLE_HOST in line:
+                host = line.split(BATTLE_HOST, 1)[1]
+                events.append("server:shooter" if b"-shooter-" in host else "server:battle")
         return events
 
 

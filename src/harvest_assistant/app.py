@@ -276,6 +276,7 @@ class HarvestAssistantApp:
             {
                 "apply_window": self._apply_game_window,
                 "discord_settings_changed": self._save_discord_settings,
+                "place_named": self._name_place,
                 "timer_pause": self._toggle_timer_pause,
                 "apply_settings": self._apply_settings,
                 "set_base_interval": self._set_base_interval,
@@ -556,8 +557,10 @@ class HarvestAssistantApp:
         self.reconnector.start()
         # the season statistics: time in a match, the cop's salary, the server age from the main menu
         from .game_watch import GameWatcher
+        from .places import PlaceNames
 
-        self.game_watch = GameWatcher(lambda: self.screen, self.seasons)   # the tab refreshes itself (button / 15 min)
+        self.places = PlaceNames(self.profile_path.parent / "places.json")
+        self.game_watch = GameWatcher(lambda: self.screen, self.seasons, places=self.places)   # the tab refreshes itself (button / 15 min)
         self.game_watch.start()
 
     def _on_reconnect_event(self, kind: str, text: str) -> None:
@@ -1515,9 +1518,10 @@ class HarvestAssistantApp:
         self._publish_overlay_feed()
         self._sync_overlay_edit_mode()
         self.overlay_page.refresh(overlay_bridge.running_overlay_pid() is not None, self.profile)
-        if time.monotonic() - self._last_presence_update >= 10:
+        if time.monotonic() - self._last_presence_update >= 15:     # Discord takes one update in 15 s anyway
             self._last_presence_update = time.monotonic()
             self._refresh_discord_presence()
+        self._show_place()
         self.rob_run_info_page.refresh()
         self.root.after(1000, self._tick)
 
@@ -1526,6 +1530,25 @@ class HarvestAssistantApp:
             setattr(self.profile, key, value)
         self.discord_presence.set_enabled(self.profile.discord_enabled)
         self._save_profile(force=True)
+        self._last_presence_update = 0.0
+        self._refresh_discord_presence()
+
+    def _show_place(self) -> None:
+        """Settings -> Discord: where the player is now, by the code from Player.log."""
+        watcher = getattr(self, "game_watch", None)
+        if watcher is None:
+            return
+        if not watcher.in_match:
+            self.settings_page.show_place(None, "Меню / игра закрыта")
+        elif watcher.on_map:
+            self.settings_page.show_place(None, "Карта")
+        elif watcher.place is None:
+            self.settings_page.show_place(None, "Загрузка места…")
+        else:
+            self.settings_page.show_place(watcher.place, self.places.get(watcher.place))
+
+    def _name_place(self, code: str, key: str) -> None:
+        self.places.set(code, key)
         self._last_presence_update = 0.0
         self._refresh_discord_presence()
 
