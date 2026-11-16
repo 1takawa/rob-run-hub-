@@ -58,6 +58,13 @@ class SettingsPage(tk.Frame):
         self.base_note = tk.StringVar(value="")
         self.hotkey_vars = {attribute: tk.StringVar(value=getattr(profile, attribute)) for _, attribute in self.HOTKEYS}
         self.window_status = tk.StringVar(value="Окно не привязано")
+        self.discord_status = tk.StringVar(value="Подключение к Discord…")
+        self.discord_enabled_var = tk.BooleanVar(value=profile.discord_enabled)
+        self.discord_show_server_var = tk.BooleanVar(value=profile.discord_show_server)
+        self.discord_show_role_var = tk.BooleanVar(value=profile.discord_show_role)
+        self.discord_show_party_var = tk.BooleanVar(value=profile.discord_show_party)
+        self.discord_show_earnings_var = tk.BooleanVar(value=profile.discord_show_earnings)
+        self.discord_show_hours_var = tk.BooleanVar(value=profile.discord_show_hours)
         self.hotkey_help = tk.StringVar(value="")
         self.route_state = tk.StringVar(value="Маршрут не записан")
         self.route_detail = tk.StringVar(value="")
@@ -77,6 +84,7 @@ class SettingsPage(tk.Frame):
             fill="x", pady=(34, 22), padx=4)
         farm = plantation_parent if plantation_parent is not None else body
         self._build_game(body)
+        self._build_discord_status(body)
         self._build_route(farm)
         self._build_collect(farm)
         self._build_timers(farm)
@@ -124,6 +132,44 @@ class SettingsPage(tk.Frame):
         self.server_clock_note = tk.StringVar(value="")
         label(card.body, "", size=9, color="muted", bg=card.fill, textvariable=self.server_clock_note, justify="left",
               wraplength=560).pack(anchor="w", pady=(8, 0))
+
+    def _build_discord_status(self, body: tk.Frame) -> None:
+        card = self._group(body, "Discord Rich Presence")
+        control = settings_row(card, "Показывать активность в Discord", "Выключение очищает карточку и закрывает соединение.", first=True)
+        Toggle(control, self.discord_enabled_var, command=self._save_discord_settings).pack(side="right")
+        label(card.body, "Статус игры и безопасная локация показываются всегда. Жилые дома и участки скрываются; "
+              "точные координаты не передаются. Остальные данные можно включать отдельно.",
+              size=9, color="muted", bg=card.fill, wraplength=560, justify="left").pack(anchor="w")
+        label(card.body, "", size=9, color="muted", bg=card.fill, textvariable=self.discord_status).pack(
+            anchor="w", pady=(10, 0))
+        options = (
+            ("Полный штат и название", "Если выключить: EU-?????? / NA-?????? без названия штата.", self.discord_show_server_var),
+            ("Роль персонажа", "Берётся автоматически из игры.", self.discord_show_role_var),
+            ("Соло / пати", "Берётся автоматически из игры.", self.discord_show_party_var),
+            ("Заработок за вайп", "Сумма за текущий сезон.", self.discord_show_earnings_var),
+            ("Время за вайп", "Часы в текущем сезоне.", self.discord_show_hours_var),
+        )
+        for title, hint, variable in options:
+            control = settings_row(card, title, hint)
+            Toggle(control, variable, command=self._save_discord_settings).pack(side="right")
+
+    def _save_discord_settings(self) -> None:
+        callback = self.callbacks.get("discord_settings_changed")
+        if callback is not None:
+            callback()
+
+    def discord_settings(self) -> dict[str, bool]:
+        return {
+            "discord_enabled": self.discord_enabled_var.get(),
+            "discord_show_server": self.discord_show_server_var.get(),
+            "discord_show_role": self.discord_show_role_var.get(),
+            "discord_show_party": self.discord_show_party_var.get(),
+            "discord_show_earnings": self.discord_show_earnings_var.get(),
+            "discord_show_hours": self.discord_show_hours_var.get(),
+        }
+
+    def set_discord_status(self, value: str) -> None:
+        self.discord_status.set(value)
 
     def _build_route(self, body: tk.Frame) -> None:
         card = self._group(body, "Путь до столов")

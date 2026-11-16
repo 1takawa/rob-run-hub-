@@ -206,6 +206,12 @@ class Profile:
     approach_hotkey: str = "f2"  # record the way to the grow room
     autocop_hotkey: str = "f10"  # start / stop police-service signup
     autocop_class: str = "Патрульный"
+    discord_enabled: bool = True
+    discord_show_server: bool = True
+    discord_show_role: bool = True
+    discord_show_party: bool = True
+    discord_show_earnings: bool = True
+    discord_show_hours: bool = True
     approach_route: RecordedRoute = field(default_factory=RecordedRoute)  # spawn -> doors -> tables, doors verified by prompt
     interval_migrated: bool = False  # one-time switch of the old 40-minute default to the real hour
     auto_reconnect: bool = False  # after being thrown into the lobby, click back into the game

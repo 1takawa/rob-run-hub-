@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
@@ -41,6 +42,8 @@ from .models import (
     start_table_timer,
 )
 from .persistence import save_profile
+from .progression_store import ProgressionStore
+from .discord_presence import DiscordPresenceController, build_presence_payload
 from .screen import ScreenService
 from .vision import VisionService
 from .vision_cycle import VisionCycleRunner
@@ -52,6 +55,7 @@ from .ui.settings_page import SettingsPage
 from .ui.table_dialogs import TableDialogs
 from .ui.overlay_page import OverlayPage
 from .ui.autocop_page import AutocopPage
+from .ui.rob_run_info_page import ROBRunInfoPage
 from .ui.theme import COLORS, FONT, FONT_SEMI, NavItem, StatusDot, apply_theme
 
 
@@ -75,6 +79,7 @@ class HarvestAssistantApp:
         from .seasons import SeasonStore
 
         self.seasons = SeasonStore(profile_path.parent / "seasons.json")   # the states (servers) and their seasons
+        self.progression_store = ProgressionStore(profile_path.parent / "progression.json")
         self.routes_dir = profile_path.parent / "routes"
         self.taught_store = TaughtStore(profile_path.parent / "taught")
         self.profile.loot_totals.clear()  # old lifetime counters: statistics now live in stats.json
@@ -99,6 +104,7 @@ class HarvestAssistantApp:
         self._runner_snapshot_lock = threading.Lock()
         self._pending_runner_snapshot: RunSnapshot | None = None
         self._closing = False
+        self._last_presence_update = 0.0
 
         self.root.title("Hidden pool — rob run edition")
         try:   # the emblem as the icon of the window and the taskbar
@@ -198,6 +204,7 @@ class HarvestAssistantApp:
             ("lab", "Лаборатория", "в разработке"),
             ("autocop", "Автокоп", ""),
             ("stats", "Статистика", ""),
+            ("rob_run_info", "ROB RUN Info", ""),
             ("overlay", "Оверлей", ""),
             ("settings", "Настройки", ""),
         ):
@@ -246,6 +253,9 @@ class HarvestAssistantApp:
         self.dashboard_page = DashboardPage(self.page_host, dashboard_callbacks, self._on_table_selected, self.profile, self.vision,
                                             self.timer_pause_var, self.stats, tables_parent=self.plantation_page.tables_host)
         self.stats_page = StatsPage(self.page_host, self.stats, self.seasons)
+        self.rob_run_info_page = ROBRunInfoPage(
+            self.page_host, lambda: self.seasons.current(), lambda: self.seasons.history(), self.progression_store,
+        )
         self.lab_page = LabPage(
             self.page_host, self.profile, self._save_laboratory,
             lambda stage: self._choose_marker(stage),
@@ -269,6 +279,7 @@ class HarvestAssistantApp:
             self.page_host,
             {
                 "apply_window": self._apply_game_window,
+                "discord_settings_changed": self._save_discord_settings,
                 "timer_pause": self._toggle_timer_pause,
                 "apply_settings": self._apply_settings,
                 "set_base_interval": self._set_base_interval,
@@ -290,6 +301,10 @@ class HarvestAssistantApp:
             self.timer_pause_var,
             plantation_parent=self.plantation_page.settings_host,
         )
+        self.discord_presence = DiscordPresenceController(
+            lambda value: self._post_to_ui(lambda text=value: self.settings_page.set_discord_status(text)),
+            enabled=self.profile.discord_enabled,
+        )
         self.route_page = self.settings_page.route
         self.wizard = self.settings_page.collect
         self.window_title_var = self.settings_page.window_title_var
@@ -305,6 +320,7 @@ class HarvestAssistantApp:
             "lab": self.lab_page,
             "autocop": self.autocop_page,
             "stats": self.stats_page,
+            "rob_run_info": self.rob_run_info_page,
             "overlay": self.overlay_page,
             "settings": self.settings_page,
         }
@@ -342,6 +358,8 @@ class HarvestAssistantApp:
             self._set_status(self._last_snapshot.reason or "Автосбор остановлен.")
         if page_id == "stats":
             self.stats_page.refresh()
+        if page_id == "rob_run_info":
+            self.rob_run_info_page.refresh()
         if page_id == "home":
             self.home_page.refresh()
 
@@ -1501,7 +1519,64 @@ class HarvestAssistantApp:
         self._publish_overlay_feed()
         self._sync_overlay_edit_mode()
         self.overlay_page.refresh(overlay_bridge.running_overlay_pid() is not None, self.profile)
+        if time.monotonic() - self._last_presence_update >= 10:
+            self._last_presence_update = time.monotonic()
+            self._refresh_discord_presence()
+        self.rob_run_info_page.refresh()
         self.root.after(1000, self._tick)
+
+    def _save_discord_settings(self) -> None:
+        for key, value in self.settings_page.discord_settings().items():
+            setattr(self.profile, key, value)
+        self.discord_presence.set_enabled(self.profile.discord_enabled)
+        self._save_profile(force=True)
+        self._last_presence_update = 0.0
+        self._refresh_discord_presence()
+
+    def _refresh_discord_presence(self) -> None:
+        if not hasattr(self, "discord_presence"):
+            return
+        if not self.profile.discord_enabled:
+            self.discord_presence.publish(None)
+            return
+        try:
+            game_open = bool(self.screen and self.screen.is_target_open())
+            in_game = bool(game_open and getattr(getattr(self, "game_watch", None), "in_match", False))
+            season = self.seasons.current()
+            summary = None
+            role = None
+            in_party = None
+            location_key = None
+            if season is not None:
+                sessions: list[dict] = []
+                try:
+                    overlay_path = self.profile_path.parent.parent / "overlay" / "stats.json"
+                    overlay_data = json.loads(overlay_path.read_text(encoding="utf-8"))
+                    sessions = list((overlay_data.get("sessions") or {}).values())
+                except (OSError, ValueError, AttributeError, TypeError):
+                    pass
+                summary = self.seasons.summary(season, list(self.stats.data.get("events", [])), sessions)
+            watcher = getattr(self, "game_watch", None)
+            if in_game:
+                role = getattr(watcher, "role", None)
+                if bool(getattr(watcher, "on_duty", False)):
+                    role = "police"
+                in_party = getattr(watcher, "in_party", None)
+                location_key = getattr(watcher, "location_key", None)
+            settings = {
+                "discord_show_server": self.profile.discord_show_server,
+                "discord_show_role": self.profile.discord_show_role,
+                "discord_show_party": self.profile.discord_show_party,
+                "discord_show_earnings": self.profile.discord_show_earnings,
+                "discord_show_hours": self.profile.discord_show_hours,
+            }
+            payload = build_presence_payload(
+                settings, game_open=game_open, in_game=in_game, season=season, summary=summary,
+                role=role, in_party=in_party, location_key=location_key,
+            )
+            self.discord_presence.publish(payload)
+        except Exception:
+            self.logger.debug("Could not refresh Discord Rich Presence", exc_info=True)
 
     def _refresh_rows(self) -> None:
         if self.runner is not None:
@@ -1648,6 +1723,8 @@ class HarvestAssistantApp:
         self.reconnector.stop()
         if getattr(self, "game_watch", None) is not None:
             self.game_watch.stop()
+        if getattr(self, "discord_presence", None) is not None:
+            self.discord_presence.close()
         self.table_watcher.stop()
         self.logger.info("Application closed")
         self._closing = True
