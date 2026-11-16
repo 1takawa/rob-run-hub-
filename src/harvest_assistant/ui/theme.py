@@ -516,9 +516,9 @@ class NavItem(tk.Canvas):
 class HelpTip(tk.Canvas):
     """A «?» in a circle: the pointer over it opens a hint next to it, the pointer away closes it."""
 
-    def __init__(self, parent: tk.Misc, text: str, *, size: int = 20, width: int = 320) -> None:
+    def __init__(self, parent: tk.Misc, text: str, *, size: int = 20, width: int = 320, side: str = "left") -> None:
         super().__init__(parent, width=size, height=size, bg=parent.cget("bg"), highlightthickness=0, bd=0, cursor="question_arrow")
-        self._text, self._size, self._wrap = text, size, width
+        self._text, self._size, self._wrap, self._side = text, size, width, side
         self._tip: tk.Toplevel | None = None
         self._draw(False)
         self.bind("<Enter>", lambda _e: self._open())
@@ -545,7 +545,7 @@ class HelpTip(tk.Canvas):
                  wraplength=self._wrap, padx=12, pady=10).pack()
         tip.update_idletasks()
         x = self.winfo_rootx() - tip.winfo_reqwidth() - 8           # to the left of the «?», level with it
-        if x < 0:
+        if x < 0 or self._side == "right":
             x = self.winfo_rootx() + self._size + 8
         y = self.winfo_rooty() + self._size // 2 - tip.winfo_reqheight() // 2
         tip.geometry(f"+{x}+{max(0, y)}")

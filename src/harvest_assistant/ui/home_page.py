@@ -128,6 +128,31 @@ def telegram_button(parent: tk.Misc, text: str, url: str, *, filled: bool = Fals
     return widget
 
 
+def sponsor_ribbon(color: str, ink: str, bg: str, size: int = 104):
+    """A diagonal «СПОНСОР» ribbon for a top right corner, drawn with PIL (Tk turns this font badly), 2x then down."""
+    from PIL import Image, ImageDraw, ImageFont, ImageTk
+
+    scale = 2
+    band, text = 30 * scale, "СПОНСОР"
+    try:
+        font = ImageFont.truetype("bahnschrift.ttf", 13 * scale)
+        try:
+            font.set_variation_by_name("SemiBold Condensed")
+        except Exception:
+            pass
+    except OSError:
+        font = ImageFont.load_default()
+    left, top, right, bottom = font.getbbox(text)
+    strip = Image.new("RGBA", (int(size * scale * 1.5), band), color)
+    ImageDraw.Draw(strip).text(((strip.width - (right - left)) / 2 - left, (band - (bottom - top)) / 2 - top), text,
+                                font=font, fill=ink)
+    strip = strip.rotate(-45, expand=True, resample=Image.BICUBIC)
+    canvas = Image.new("RGBA", (size * scale, size * scale), bg)
+    centre = int(size * scale * 0.62)            # where the middle of the band crosses the corner's diagonal
+    canvas.alpha_composite(strip, (centre - strip.width // 2, size * scale - centre - strip.height // 2))
+    return ImageTk.PhotoImage(canvas.resize((size, size), Image.LANCZOS))
+
+
 class VpnCard(tk.Frame):
     """«Проблема с серверами?»: the author's VPN, its promo code to copy, the bot and the site."""
 
@@ -160,6 +185,9 @@ class VpnCard(tk.Frame):
             telegram_button(row, "Бот", vpn["bot"], filled=True).pack(side="left", padx=(8, 0))
         if vpn.get("site"):
             button(row, "Сайт", lambda: webbrowser.open(vpn["site"])).pack(side="left", padx=(8, 0))
+        # a diagonal ribbon over the top right corner, as the slanted tabs of the menu: this block is a sponsor's
+        self._ribbon = sponsor_ribbon(self.BLUE, "#0c1a26", STRIP)
+        tk.Label(self, image=self._ribbon, bg=STRIP, bd=0).place(relx=1.0, x=0, y=0, anchor="ne")
         tk.Misc.lower(rings)   # under the text and the buttons
 
     def _copy(self) -> None:

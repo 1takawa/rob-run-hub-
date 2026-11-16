@@ -55,7 +55,7 @@ from .ui.table_dialogs import TableDialogs
 from .ui.overlay_page import OverlayPage
 from .ui.autocop_page import AutocopPage
 from .ui.rob_run_info_page import ROBRunInfoPage
-from .ui.theme import COLORS, FONT, FONT_SEMI, HEAD, INK, NavItem, StatusDot, apply_theme
+from .ui.theme import COLORS, FONT, FONT_SEMI, HEAD, INK, HelpTip, NavItem, StatusDot, apply_theme
 
 
 class HarvestAssistantApp:
@@ -199,7 +199,8 @@ class HarvestAssistantApp:
             (None, (("home", "Главная", ""),)),
             ("Боты", (("launch", "Запуск", ""), ("tables", "Плантация", ""), ("lab", "Лаборатория", "скоро"),
                       ("autocop", "Автокоп", ""))),
-            ("Tools", (("rob_run_info", "Рейд калькулятор", ""), ("overlay", "Оверлей", ""), ("stats", "Статистика", ""))),
+            ("Tools", (("rob_run_info", "Рейд калькулятор", ""), ("overlay", "Оверлей", ""), ("stats", "Статистика", ""),
+                       ("discord", "Discord RPC", ""))),
             (None, (("settings", "Настройки", ""),)),
         )
         TAB_COLORS = {"Боты": (COLORS["green"], INK), "Tools": ("#3da9f5", "#0c1a26")}   # tab / text on it
@@ -235,7 +236,20 @@ class HarvestAssistantApp:
         states.pack(side="bottom", fill="x", padx=26, pady=(0, 18))
         StatusDot(states, self.auto_state_var, self._pill_color, command=self._toggle_auto).pack(anchor="w", pady=2)
         StatusDot(states, self.run_state_var, self._pill_color).pack(anchor="w", pady=2)
-        StatusDot(states, self.game_connection_var, self._pill_color).pack(anchor="w", pady=2)
+        game_line = tk.Frame(states, bg=COLORS["rail"])
+        game_line.pack(anchor="w", fill="x", pady=2)
+        StatusDot(game_line, self.game_connection_var, self._pill_color).pack(side="left")
+        game_help = HelpTip(game_line, "Игра не нашлась сама? Открой игру и нажми в ней Ctrl+F10 — хаб привяжется к её "
+                                       "окну. Потом посмотри сюда: должно стать «Игра найдена».", size=16, width=260,
+                            side="right")
+
+        def show_game_help(*_args) -> None:
+            if self.game_connection_var.get() == "Игра не найдена":
+                game_help.pack(side="left", padx=(8, 0))
+            else:
+                game_help.pack_forget()
+        self.game_connection_var.trace_add("write", show_game_help)
+        show_game_help()
 
         main = tk.Frame(shell, bg=COLORS["bg"])
         main.pack(side="left", fill="both", expand=True)
@@ -289,6 +303,9 @@ class HarvestAssistantApp:
             self.profile,
             {"start": self._start_overlay, "stop": self._stop_overlay},
         )
+        from .ui.discord_page import DiscordPage
+
+        self.discord_page = DiscordPage(self.page_host)
         self.settings_page = SettingsPage(
             self.page_host,
             {
@@ -313,6 +330,7 @@ class HarvestAssistantApp:
             self.profile,
             self.timer_pause_var,
             plantation_parent=self.plantation_page.settings_host,
+            discord_parent=self.discord_page.host,
         )
         self.discord_presence = DiscordPresenceController(
             lambda value: self._post_to_ui(lambda text=value: self.settings_page.set_discord_status(text)),
@@ -335,6 +353,7 @@ class HarvestAssistantApp:
             "stats": self.stats_page,
             "rob_run_info": self.rob_run_info_page,
             "overlay": self.overlay_page,
+            "discord": self.discord_page,
             "settings": self.settings_page,
         }
         for page in self.pages.values():

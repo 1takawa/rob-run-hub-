@@ -39,6 +39,7 @@ class SettingsPage(tk.Frame):
         profile: Profile,
         timer_pause_var: tk.BooleanVar,
         plantation_parent: tk.Misc | None = None,
+        discord_parent: tk.Misc | None = None,
     ) -> None:
         super().__init__(parent, bg=COLORS["bg"])
         self.callbacks = callbacks
@@ -84,7 +85,7 @@ class SettingsPage(tk.Frame):
             fill="x", pady=(34, 22), padx=4)
         farm = plantation_parent if plantation_parent is not None else body
         self._build_game(body)
-        self._build_discord_status(body)
+        self._build_discord_status(discord_parent if discord_parent is not None else body)
         self._build_route(farm)
         self._build_collect(farm)
         self._build_timers(farm)
@@ -113,11 +114,7 @@ class SettingsPage(tk.Frame):
 
     def _build_game(self, body: tk.Frame) -> None:
         card = self._group(body, "Игра")
-        control = settings_row(card, "Окно игры", "Часть заголовка. Проще всего: в игре нажми Ctrl+F10.", first=True)
-        PillButton(control, "Применить", self.callbacks["apply_window"], style="secondary", padx=16, height=34, size=9).pack(side="right")
-        ttk.Entry(control, textvariable=self.window_title_var, width=18).pack(side="right", padx=(0, 8))
-        label(card.body, "", size=9, color="muted", bg=card.fill, textvariable=self.window_status).pack(anchor="w", pady=(10, 0))
-        control = settings_row(card, "Автореконнект")
+        control = settings_row(card, "Автореконнект", first=True)
         Toggle(control, self.reconnect_var, command=self.callbacks["toggle_reconnect"]).pack(side="right")
         HelpTip(control, "Если тебя выкинуло из игры в лобби, бот сам вернётся: подтвердит окно «Ранний доступ», "
                          "нажмёт RUN и дождётся появления персонажа. Вылет он узнаёт по журналу игры (Player.log).\n\n"
@@ -125,7 +122,7 @@ class SettingsPage(tk.Frame):
                          "где записан старт.").pack(side="right", padx=(0, 12))
 
     def _build_discord_status(self, body: tk.Frame) -> None:
-        card = self._group(body, "Discord Rich Presence")
+        card = self._group(body, "Discord · активность")
         control = settings_row(card, "Показывать активность в Discord", "Выключение очищает карточку и закрывает соединение.", first=True)
         Toggle(control, self.discord_enabled_var, command=self._save_discord_settings).pack(side="right")
         label(card.body, "Статус игры и место показываются всегда. Поселения (участки) — «Локация скрыта»; "
