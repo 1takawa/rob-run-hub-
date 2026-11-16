@@ -100,6 +100,9 @@ class CopCorner(unittest.TestCase):
             def add_playtime(self, _s):
                 pass
 
+            def add_role_time(self, _r, _s):
+                pass
+
         watch = GameWatcher(lambda: Screen(), Seasons(), log=_Log())
         watch.see_log(["battle", "server:battle", "role:citizen"])
         for _ in range(5):
@@ -135,3 +138,29 @@ class CopCorner(unittest.TestCase):
         self.assertEqual(int(frame[0, 999, 0]), 200)
         self.assertEqual(int(frame[300, 500].sum()), 0)
         self.assertTrue(np.all(frame[:108, 620:, 0] == 200))
+
+
+class RoleTime(unittest.TestCase):
+    def test_time_in_each_role_goes_to_the_session_and_the_wipe(self) -> None:
+        import time as _time
+
+        from harvest_assistant.seasons import SeasonStore
+
+        class Screen:
+            def is_target_open(self):
+                return True
+
+        with tempfile.TemporaryDirectory() as folder:
+            seasons = SeasonStore(Path(folder) / "seasons.json")
+            season = seasons.start("06242", "rocky valley", _time.time() - 3600)
+            watch = GameWatcher(lambda: Screen(), seasons, log=_Log())
+            watch.see_log(["battle", "server:battle", "role:citizen"])
+            watch._tick(2.0)
+            watch._tick(2.0)
+            watch.see_log(["rolechange:robber"])
+            watch._tick(2.0)
+            watch.see_log(["realm"])                     # on the map: no role time
+            watch._tick(2.0)
+            self.assertEqual(watch.session_roles, {"civilian": 4.0, "criminal": 2.0})
+            summary = SeasonStore.summary(seasons.get(season["id"]), [], [])
+            self.assertEqual(summary["roles"], {"civilian": 4.0, "police": 0.0, "criminal": 2.0})

@@ -562,6 +562,7 @@ class HarvestAssistantApp:
         self.places = PlaceNames(self.profile_path.parent / "places.json")
         self.game_watch = GameWatcher(lambda: self.screen, self.seasons, places=self.places)   # the tab refreshes itself (button / 15 min)
         self.game_watch.start()
+        self.stats_page.session_roles = lambda: dict(self.game_watch.session_roles)
 
     def _on_reconnect_event(self, kind: str, text: str) -> None:
         """Runs on the UI thread. The log watcher reports; the route is stopped here."""

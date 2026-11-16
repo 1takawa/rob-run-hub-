@@ -20,6 +20,7 @@ AMBER, BLUE, RED = "#e9b93a", "#6cc4ff", "#ff7a70"
 PAPER, PAPER_INK, PAPER_MUTED = "#ecebe6", "#141414", "#5a5a55"
 KNOCK, DEATH = "#d3b2ff", "#ff927c"
 HEAD, BODY = "Bahnschrift SemiBold Condensed", "Bahnschrift Condensed"
+ROLES = (("civilian", "Гражданский", "#46c46a"), ("police", "Полицейский", "#3da9f5"), ("criminal", "Грабитель", "#ff4f45"))
 PACKS = {"yellow": ("Жёлтые пакеты", "#f5c542"), "purple": ("Фиолетовые", "#b06cf0"), "green": ("Зелёные", "#46c46a")}
 
 
@@ -148,6 +149,7 @@ class StatsPage(tk.Frame):
         self.seasons = seasons or SeasonStore(Path(stats.path).with_name("seasons.json"))
         self.overlay_stats = overlay_stats or OVERLAY_DIR / "stats.json"
         self.viewing: int | None = None     # a past season picked in the history; None: the current one
+        self.session_roles = lambda: {}       # set by the app: seconds per role in this run of the game
         scroll = ScrollPage(self, max_width=980)
         scroll.pack(fill="both", expand=True)
         self.scroll = scroll
@@ -170,7 +172,7 @@ class StatsPage(tk.Frame):
     def _summary(self, season: dict) -> dict:
         return SeasonStore.summary(season, list(self.stats.data.get("events", [])), self._combat_sessions())
 
-    EVERY_MS = 15 * 60 * 1000   # the tab refreshes itself every 15 minutes, or with «Обновить»
+    EVERY_MS = 60 * 1000        # the tab looks every minute; it is redrawn only when a shown number changed
 
     def update_now(self) -> None:
         self._signature = None
@@ -199,8 +201,10 @@ class StatsPage(tk.Frame):
             before = self._summary(older[0]) if older else None
         # Rebuilt only when something shown changed (time in the game counts in minutes, the wipe timer in tens of
         # minutes); the new picture is put together first and swapped in at once, so nothing blinks.
+        session = {k: int(v // 60) for k, v in (self.session_roles() or {}).items()} if season is current else {}
         shown = dict(summary or {}, playtime=int((summary or {}).get("playtime", 0) // 60), left=int((summary or {}).get("left", 0) // 600),
-                     progress=round((summary or {}).get("progress", 0), 2))
+                     progress=round((summary or {}).get("progress", 0), 2), session=session,
+                     roles={k: int(v // 60) for k, v in (summary or {}).get("roles", {}).items()})
         signature = (json.dumps(shown, sort_keys=True, default=str), json.dumps(history, default=str), self.viewing)
         if signature == self._signature:
             return
@@ -226,6 +230,7 @@ class StatsPage(tk.Frame):
             lower.grid_columnconfigure(1, weight=1, uniform="lower")
             self._earnings(lower, summary).grid(row=0, column=0, sticky="nsew", padx=(0, 10))
             self._personal(lower, summary).grid(row=0, column=1, sticky="nsew")
+            self._roles(root, summary, self.session_roles() if season is current else None)
         if history:
             self._history(root, history, season)
         tk.Frame(root, bg=COLORS["bg"], height=24).pack()
@@ -409,6 +414,47 @@ class StatsPage(tk.Frame):
                              "время и зарплату копа — хаб, пока он открыт.",
                  bg=STRIP, fg=MUTED, font=(BODY, 10), wraplength=380, justify="left").pack(anchor="w", pady=(8, 0))
         return box
+
+    def _roles(self, root: tk.Misc, summary: dict, session: dict | None) -> None:
+        """How long in each role: this session (the current run of the game) and the whole wipe."""
+        box = Box(root)
+        box.pack(fill="x", pady=(10, 0))
+        inner = tk.Frame(box, bg=STRIP)
+        inner.pack(fill="both", expand=True, padx=12, pady=10)
+        head = tk.Frame(inner, bg=STRIP)
+        head.pack(fill="x", pady=(0, 6))
+        small(head, "роли").pack(side="left")
+        for key, name, color in ROLES:
+            tk.Frame(head, bg=color, width=10, height=10).pack(side="left", padx=(12, 4))
+            small(head, name, color=TEXT).pack(side="left")
+        rows = [("сессия", session)] if session is not None else []
+        rows.append(("за вайп", summary.get("roles") or {}))
+        for title, times in rows:
+            line = tk.Frame(inner, bg=STRIP)
+            line.pack(fill="x", pady=(4, 0))
+            small(line, title).pack(side="left")
+            numbers = tk.Frame(line, bg=STRIP)
+            numbers.pack(side="right")
+            for key, name, color in ROLES:
+                tk.Label(numbers, text=hours(times.get(key, 0.0)), bg=STRIP, fg=color, font=(HEAD, 14),
+                         width=8, anchor="e").pack(side="left")
+            bar = tk.Canvas(inner, bg=STRIP, highlightthickness=0, height=10)
+            bar.pack(fill="x", pady=(4, 2))
+
+            def draw(_event=None, bar=bar, times=times) -> None:
+                bar.delete("all")
+                width, x = bar.winfo_width(), 0.0
+                total = sum(times.get(key, 0.0) for key, _n, _c in ROLES)
+                if total <= 0:
+                    bar.create_rectangle(0, 0, width, 8, fill=PANEL, outline="")
+                    return
+                for key, _name, color in ROLES:
+                    w = width * times.get(key, 0.0) / total
+                    bar.create_rectangle(x, 0, x + w, 8, fill=color, outline="")
+                    x += w
+            bar.bind("<Configure>", draw)
+        tk.Label(inner, text="Роль берётся из журнала игры. Сессия — с запуска игры; на карте, в мотеле и на участке "
+                             "время в роли не идёт.", bg=STRIP, fg=MUTED, font=(BODY, 10), justify="left").pack(anchor="w", pady=(6, 0))
 
     def _history(self, root: tk.Misc, history: list[dict], shown: dict | None) -> None:
         box = Box(root)

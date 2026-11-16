@@ -162,6 +162,8 @@ class GameWatcher(threading.Thread):
         self.place_role: str | None = None      # from Player.log: the role in the place («hubber», «settler» ...)
         self.place_server: str | None = None    # «shooter» or «battle»
         self.on_map = False
+        self.session_roles: dict[str, float] = {}   # this run of the game: seconds per role
+        self._was_open = False
         if self.in_match:
             self.see_log(getattr(self.log, "tail_events", list)())   # the hub started with the player in a place already
             self.in_match = True
@@ -267,8 +269,15 @@ class GameWatcher(threading.Thread):
         if not open_:
             self.in_match = False
         self.seasons.roll_over()
+        if open_ and not self._was_open:
+            self.session_roles = {}              # the game was started again: a new session
+        self._was_open = open_
         if open_ and self.in_match:
             self.seasons.add_playtime(min(elapsed, 3 * TICK))
+            if self.role in ("civilian", "police", "criminal"):
+                seconds = min(elapsed, 3 * TICK)
+                self.session_roles[self.role] = self.session_roles.get(self.role, 0.0) + seconds
+                self.seasons.add_role_time(self.role, seconds)
         now = time.monotonic()
         if not self.in_match:
             self.on_duty = None

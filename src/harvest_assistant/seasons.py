@@ -24,6 +24,9 @@ WIPE_DAYS = 7
 WIPE_SECONDS = WIPE_DAYS * 86400
 
 
+ROLES = ("civilian", "police", "criminal")   # the time in each role is counted per season
+
+
 def new_season(code: str, name: str, started_at: float, *, auto_start: bool = False) -> dict:
     return {
         "id": int(time.time() * 1000), "code": code.strip().upper(), "name": name.strip().upper(),
@@ -148,6 +151,15 @@ class SeasonStore:
                 season["playtime"] = float(season.get("playtime", 0.0)) + seconds
                 self._save_soon()
 
+    def add_role_time(self, role: str, seconds: float) -> None:
+        """Time as a civilian / criminal / police (the role comes from Player.log)."""
+        with self._lock:
+            season = self.current()
+            if season is not None and seconds > 0 and role in ROLES:
+                roles = season.setdefault("roles", {})
+                roles[role] = float(roles.get(role, 0.0)) + seconds
+                self._save_soon()
+
     def add_salary(self, amount: int, *, new_shift: bool) -> None:
         with self._lock:
             season = self.current()
@@ -188,6 +200,7 @@ class SeasonStore:
             "counts": counts, "packages": packages, "salary": salary, "shifts": int(season.get("shifts", 0)),
             "total": total, "per_hour": int(total / (playtime / 3600)) if playtime >= 600 else None,
             "playtime": playtime, **combat,
+            "roles": {role: float((season.get("roles") or {}).get(role, 0.0)) for role in ROLES},
             "kd": round(combat["knocks"] / combat["deaths"], 1) if combat["deaths"] else (float(combat["knocks"]) if combat["knocks"] else None),
             "kills": season.get("kills"), "years": season.get("years"),
             "wipe_at": wipe_at, "left": max(0.0, wipe_at - now) if not season.get("ended_at") else 0.0,
