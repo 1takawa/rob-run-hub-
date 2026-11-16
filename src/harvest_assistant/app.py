@@ -195,26 +195,28 @@ class HarvestAssistantApp:
         self._nav_buttons: dict[str, NavItem] = {}
         nav = tk.Frame(rail, bg=COLORS["rail"])
         nav.pack(fill="x", padx=12)
-        sections = (   # (heading or None, the tabs under it)
+        sections = (   # (heading or None, the tabs under it); the colour of a category: TAB_COLORS
             (None, (("home", "Главная", ""),)),
             ("Боты", (("launch", "Запуск", ""), ("tables", "Плантация", ""), ("lab", "Лаборатория", "скоро"),
                       ("autocop", "Автокоп", ""))),
             ("Tools", (("rob_run_info", "Рейд калькулятор", ""), ("overlay", "Оверлей", ""), ("stats", "Статистика", ""))),
             (None, (("settings", "Настройки", ""),)),
         )
+        TAB_COLORS = {"Боты": (COLORS["green"], INK), "Tools": ("#3da9f5", "#0c1a26")}   # tab / text on it
         for heading, tabs in sections:
             host = nav
             if heading:
                 # a category: a slanted lime tab with the name, and a lime bar along its tabs on the left
                 tab = tk.Canvas(nav, bg=COLORS["rail"], highlightthickness=0, height=20)
-                name = tab.create_text(8, 10, text=heading.upper(), anchor="w", fill=INK, font=(HEAD, 11))
+                color, ink = TAB_COLORS.get(heading, (COLORS["green"], INK))
+                name = tab.create_text(8, 10, text=heading.upper(), anchor="w", fill=ink, font=(HEAD, 11))
                 right = tab.bbox(name)[2] + 14
-                tab.tag_raise(name, tab.create_polygon(0, 0, right, 0, right - 6, 20, 0, 20, fill=COLORS["green"], outline=""))
+                tab.tag_raise(name, tab.create_polygon(0, 0, right, 0, right - 6, 20, 0, 20, fill=color, outline=""))
                 tab.configure(width=right + 2)
                 tab.pack(anchor="w", padx=(4, 0), pady=(14, 0))
                 group = tk.Frame(nav, bg=COLORS["rail"])
                 group.pack(fill="x", padx=(4, 0), pady=(4, 0))
-                tk.Frame(group, bg=COLORS["green"], width=2).pack(side="left", fill="y")
+                tk.Frame(group, bg=color, width=2).pack(side="left", fill="y")
                 host = tk.Frame(group, bg=COLORS["rail"])
                 host.pack(side="left", fill="x", expand=True, padx=(4, 0))
             elif self._nav_buttons:
