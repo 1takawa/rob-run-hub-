@@ -12,7 +12,7 @@ from PIL import Image, ImageTk
 
 from ..loot import LootItem
 from ..models import InteractionCalibration, Profile
-from .theme import (COLORS, FONT_SEMI, Card, HelpTip, PillButton, ScrollPage, Segmented, Toggle, label, page_header,
+from .theme import (COLORS, FONT_SEMI, Block, Card, HelpTip, PillButton, ScrollPage, Segmented, Toggle, label, page_header,
                     settings_row)
 
 SWATCH = {
@@ -93,10 +93,14 @@ class SettingsPage(tk.Frame):
 
     # ---- sections ----------------------------------------------------------------------
 
-    def _group(self, parent: tk.Frame, title: str) -> Card:
-        label(parent, title.upper(), size=13, font="Bahnschrift SemiBold Condensed", color="muted").pack(anchor="w", padx=6, pady=(0, 6))
-        card = Card(parent, padding=(26, 20), radius=20)
-        card.pack(fill="x", pady=(0, 26))
+    TONES = {"Игра": "lime", "Путь до столов": "blue", "Сбор урожая": "amber", "Таймеры": "amber",
+             "Зрение плантации": "green"}
+
+    def _group(self, parent: tk.Frame, title: str) -> Block:
+        """A block with the slanted tab of its name, coloured by what it is about (as the blocks of the overlay)."""
+        tone = self.TONES.get(title, "violet" if "discord" in title.lower() else "grey")
+        card = Block(parent, title, tone, padding=(16, 12))
+        card.pack(fill="x", pady=(0, 14))
         return card
 
     def _build_game(self, body: tk.Frame) -> None:

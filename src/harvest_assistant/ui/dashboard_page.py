@@ -13,7 +13,7 @@ from ..overlay_bridge import PACKAGE_PRICES, format_money
 from ..stats import StatsStore
 from ..vision import VisionService
 from .modifiers_popup import ModifiersPopup, icon
-from .theme import COLORS, FONT, FONT_LIGHT, FONT_SEMI, Bar, Card, PillButton, ScrollPage, caption, divider, label, page_header
+from .theme import COLORS, FONT, FONT_LIGHT, FONT_SEMI, Bar, Block, Card, PillButton, ScrollPage, caption, divider, label, page_header
 
 KINDS = (
     ("yellow", COLORS["yellow"], "Жёлтые"),
@@ -105,88 +105,95 @@ class DashboardPage(tk.Frame):
 
         grid = tk.Frame(body, bg=COLORS["bg"])
         grid.pack(fill="x", pady=(0, 34))
-        grid.columnconfigure(0 if tables_parent is not None else 1, weight=1)   # alone on «Запуск»: full width
+        grid.columnconfigure(0, weight=7, uniform="launch")
+        grid.columnconfigure(1, weight=4, uniform="launch")
+        HEADF = "Bahnschrift SemiBold Condensed"
 
-        # --- left: next harvest, one-line package counters, foldable money details, start
-        left = Card(grid, padding=(28, 24), radius=22)
-        left.grid(row=0, column=0, sticky="new", padx=(0, 0 if tables_parent is not None else 16))
-        inner = left.body
-        caption(inner, "До готовности", left.fill).pack(anchor="w")
+        # --- the plantation: the time to the harvest, the packages, start / pause / stop
+        left = Block(grid, "Плантация", "green")
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         self.next_name = tk.StringVar(value="Пока нет столов")
         self.next_time = tk.StringVar(value="— : —")
         self.timer_note = tk.StringVar(value="")
         self.lab_timer = tk.StringVar(value="")
-        label(inner, "", bg=left.fill, size=11, color="muted", textvariable=self.next_name).pack(anchor="w", pady=(10, 0))
-        self.timer_label = label(inner, "", bg=left.fill, size=44, font="Bahnschrift SemiBold Condensed", textvariable=self.next_time)
+        left.note("все столы")
+        inner = left.body
+        top = tk.Frame(inner, bg=left.fill)
+        top.pack(fill="x")
+        clock = tk.Frame(top, bg=left.fill)
+        clock.pack(side="left")
+        label(clock, "СБОР ЧЕРЕЗ", size=9, color="muted", bg=left.fill).pack(anchor="w")
+        self.timer_label = label(clock, "", bg=left.fill, size=46, font=HEADF, textvariable=self.next_time)
         self.timer_label.pack(anchor="w")
-        label(inner, "", bg=left.fill, size=9, color="amber", textvariable=self.timer_note).pack(anchor="w")
-        label(inner, "", bg=left.fill, size=9, color="muted", textvariable=self.lab_timer).pack(anchor="w")
-
-        strip = tk.Frame(inner, bg=left.fill)
-        strip.pack(anchor="w", pady=(14, 0))
+        label(clock, "", bg=left.fill, size=9, color="amber", textvariable=self.timer_note).pack(anchor="w")
+        label(clock, "", bg=left.fill, size=9, color="muted", textvariable=self.lab_timer).pack(anchor="w")
+        strip = tk.Frame(top, bg=left.fill)
+        strip.pack(side="right", anchor="s", pady=(0, 10))
         self.count_labels: dict[str, tk.Label] = {}
-        for index, (key, color, _name) in enumerate(KINDS):
-            if index:
-                tk.Frame(strip, width=1, height=20, bg="#34343a").pack(side="left", padx=14)
-            tk.Frame(strip, width=3, height=20, bg=color).pack(side="left", padx=(0, 8))
-            count = tk.Label(strip, text="0", bg=left.fill, fg=COLORS["text"], font=(FONT_SEMI, 14))
+        for key, color, _name in KINDS:
+            cell = tk.Frame(strip, bg=COLORS["surface_alt"])
+            cell.pack(side="left", padx=(3, 0))
+            tk.Frame(cell, width=4, bg=color).pack(side="left", fill="y")
+            count = tk.Label(cell, text="0", bg=COLORS["surface_alt"], fg=COLORS["text"], font=(HEADF, 18), padx=10, pady=4)
             count.pack(side="left")
             self.count_labels[key] = count
+        self.controls = tk.Frame(inner, bg=left.fill)
+        self.controls.pack(fill="x", pady=(12, 0))
+        self.start_button = PillButton(self.controls, "Старт", callbacks["start"], style="primary", padx=34, height=40, size=12)
+        self.pause_button = PillButton(self.controls, "Пауза", callbacks["pause"], style="secondary", padx=22, height=40, size=11)
+        self.stop_button = PillButton(self.controls, "Стоп", callbacks["stop"], style="danger", padx=20, height=40, size=11)
+        self.keys_hint = label(self.controls, "F8 — старт / пауза · F9 — стоп", size=9, color="muted", bg=left.fill)
+        self.keys_hint.pack(side="right")
+        self.progress = tk.Canvas(left, bg=COLORS["surface_alt"], height=3, highlightthickness=0)
+        self.progress.pack(fill="x", side="bottom")
 
-        self.arrow = tk.Label(inner, bg=left.fill, cursor="hand2", image=chevron(0))
-        self.arrow.pack(pady=(8, 0))
-        self.arrow.bind("<ButtonPress-1>", lambda _e: self.details.toggle())
-
-        self.details = Collapsible(inner, left.fill, on_progress=self._on_fold)
-        self.details.pack(fill="x")
+        # --- the session: cycles, money by kind of package, the state of auto-collect
+        session = Block(grid, "Сессия", "lime")
+        session.grid(row=0, column=1, sticky="nsew")
+        box = session.body
+        self.cycles_var = tk.StringVar(value="0")
         self.money_labels: dict[str, tk.Label] = {}
         self.piece_labels: dict[str, tk.Label] = {}
-        box = self.details.inner
+        row = tk.Frame(box, bg=session.fill)
+        row.pack(fill="x", pady=2)
+        label(row, "ЦИКЛОВ", size=9, color="muted", bg=session.fill).pack(side="left")
+        label(row, "", size=14, font=HEADF, bg=session.fill, textvariable=self.cycles_var).pack(side="right")
         for key, color, name in KINDS:
-            row = tk.Frame(box, bg=left.fill)
-            row.pack(fill="x", pady=4)
-            tk.Frame(row, width=3, height=16, bg=color).pack(side="left", padx=(0, 9))
-            label(row, name, size=10, bg=left.fill).pack(side="left")
-            self.piece_labels[key] = label(row, "", size=9, color="faint", bg=left.fill)
+            row = tk.Frame(box, bg=session.fill)
+            row.pack(fill="x", pady=2)
+            tk.Frame(row, width=3, height=14, bg=color).pack(side="left", padx=(0, 8))
+            label(row, name, size=10, bg=session.fill).pack(side="left")
+            self.piece_labels[key] = label(row, "", size=9, color="faint", bg=session.fill)
             self.piece_labels[key].pack(side="left", padx=(6, 0))
-            self.money_labels[key] = label(row, "$0", size=10, font=FONT_SEMI, bg=left.fill)
+            self.money_labels[key] = label(row, "$0", size=12, font=HEADF, bg=session.fill)
             self.money_labels[key].pack(side="right")
-        divider(box).pack(fill="x", pady=(8, 8))
-        total = tk.Frame(box, bg=left.fill)
-        total.pack(fill="x", pady=(0, 6))
-        label(total, "Всего", size=10, color="muted", bg=left.fill).pack(side="left")
-        self.total_label = label(total, "$0", size=12, font=FONT_SEMI, color="green", bg=left.fill)
+        divider(box).pack(fill="x", pady=(6, 6))
+        total = tk.Frame(box, bg=session.fill)
+        total.pack(fill="x")
+        label(total, "ЗАРАБОТАНО", size=9, color="muted", bg=session.fill).pack(side="left")
+        self.total_label = label(total, "$0", size=16, font=HEADF, color="green", bg=session.fill)
         self.total_label.pack(side="right")
-
-        self.controls = tk.Frame(inner, bg=left.fill)
-        self.controls.pack(fill="x", pady=(14, 0))
-        self.start_button = PillButton(self.controls, "Старт", callbacks["start"], style="primary", padx=40, height=42, size=11)
-        self.pause_button = PillButton(self.controls, "Пауза", callbacks["pause"], style="secondary", padx=24, height=42, size=11)
-        self.stop_button = PillButton(self.controls, "Стоп", callbacks["stop"], style="ghost", padx=18, height=42, size=11)
-        self.cycles_var = tk.StringVar(value="Циклов: 0")
-        label(inner, "", size=10, color="muted", bg=left.fill, textvariable=self.cycles_var).pack(anchor="w", pady=(12, 0))
+        self.auto_note = label(box, "", size=9, color="muted", bg=session.fill)
+        self.auto_note.pack(anchor="w", pady=(8, 0))
         self.hint = tk.StringVar(value="")
-        label(inner, "", size=9, color="faint", bg=left.fill, textvariable=self.hint, justify="left", wraplength=250).pack(anchor="w", pady=(12, 0))
+        label(box, "", size=9, color="faint", bg=session.fill, textvariable=self.hint, justify="left", wraplength=260).pack(anchor="w", pady=(4, 0))
 
         # --- right: up to six tables, one compact line each
-        right = Card(tables_parent if tables_parent is not None else grid, padding=(14, 14), radius=22)
+        right = Block(tables_parent if tables_parent is not None else grid, "Столы", "green", padding=(4, 6))
         if tables_parent is not None:
             right.pack(fill="x")             # on the «Плантация» tab
         else:
-            right.grid(row=0, column=1, sticky="new")
+            right.grid(row=1, column=0, columnspan=2, sticky="new", pady=(10, 0))
         self.rows_card = right
-        head = tk.Frame(right.body, bg=right.fill)
-        head.pack(fill="x", padx=12, pady=(4, 8))
-        label(head, "Столы", size=12, font=FONT_SEMI, bg=right.fill).pack(side="left")
-        PillButton(head, "Добавить", callbacks["add"], style="ghost", padx=14, height=30, size=9).pack(side="right")
+        add = PillButton(right.head, "+ Добавить", callbacks["add"], style="secondary", padx=10, height=24, size=9)
+        add.configure(bg=COLORS["surface_alt"])
+        add.pack(side="right", padx=8)
         self.rows_host = tk.Frame(right.body, bg=right.fill)
         self.rows_host.pack(fill="x")
         self.empty = label(self.rows_host, "Добавь первый стол — программа начнёт отсчёт.", size=10, color="muted", bg=right.fill)
 
     # ------------------------------------------------------------------------------------
 
-    def _on_fold(self, progress: float) -> None:
-        self.arrow.configure(image=chevron(progress))
 
     def refresh(
         self,
@@ -200,7 +207,10 @@ class DashboardPage(tk.Frame):
         now = time.time()
 
         counts = self.stats.session_counts()
-        self.cycles_var.set(f"Циклов: {self.stats.session_cycles()}")
+        self.cycles_var.set(str(self.stats.session_cycles()))
+        self.auto_note.configure(text="АВТОСБОР ВКЛ — циклы идут один за другим" if self.profile.auto_collect
+                                 else "АВТОСБОР ВЫКЛ — один цикл и стоп",
+                                 fg=COLORS["green"] if self.profile.auto_collect else COLORS["muted"])
         grand_total = 0
         for key, _color, _name in KINDS:
             amount = counts[key] * PACKAGE_PRICES[key]
@@ -231,7 +241,8 @@ class DashboardPage(tk.Frame):
             remaining = remaining_seconds(table, self.profile, now) if status is None else status.remaining_seconds
             ready = remaining == 0
             row["name"].configure(text=table.name, fg=COLORS["text"])
-            row["time"].configure(text=self._format_time(remaining), fg=COLORS["green"] if ready else COLORS["muted"])
+            row["time"].configure(text="ГОТОВ" if ready else self._format_time(remaining),
+                                  fg=COLORS["green"] if ready else COLORS["muted"])
             interval = max(1, effective_interval(table))
             self._show_modifiers(row, table)
             row["bar"].set(0.0 if remaining is None else 1.0 - min(1.0, remaining / interval), ready)
@@ -256,6 +267,13 @@ class DashboardPage(tk.Frame):
             self.lab_timer.set("")
         self.next_time.set("Готово" if next_seconds == 0 else self._format_time(next_seconds))
         self.timer_label.configure(fg=COLORS["green"] if next_seconds == 0 else COLORS["text"])
+        # the strip under the block fills up towards the harvest
+        cycle = max((effective_interval(t) for t in ordered), default=0)
+        share = 0.0 if next_seconds is None or not cycle else max(0.0, min(1.0, 1 - next_seconds / cycle))
+        width = self.progress.winfo_width()
+        self.progress.delete("all")
+        if width > 1 and share > 0:
+            self.progress.create_rectangle(0, 0, width * share, 3, fill=COLORS["green"] if share >= 1 else "#46c46a", outline="")
         self.timer_note.set("Таймеры на паузе" if self.profile.manual_timer_paused else "")
 
         active = snapshot.state not in (RunState.STOPPED, RunState.ERROR)
@@ -296,9 +314,9 @@ class DashboardPage(tk.Frame):
         frame.pack(fill="x")
         line = tk.Frame(frame, bg=fill)
         line.pack(fill="x")
-        name = tk.Label(line, text=table.name, bg=fill, fg=COLORS["text"], font=(FONT, 11), width=9, anchor="w")
+        name = tk.Label(line, text=table.name, bg=fill, fg=COLORS["text"], font=("Bahnschrift SemiBold Condensed", 14), width=9, anchor="w")
         name.pack(side="left")
-        time_label = tk.Label(line, text="—", bg=fill, fg=COLORS["muted"], font=(FONT_SEMI, 11), width=8, anchor="e")
+        time_label = tk.Label(line, text="—", bg=fill, fg=COLORS["muted"], font=("Bahnschrift SemiBold Condensed", 14), width=8, anchor="e")
         time_label.pack(side="right")
         menu = tk.Canvas(line, width=30, height=30, bg=fill, highlightthickness=0, cursor="hand2")
         menu.pack(side="right", padx=(4, 4))

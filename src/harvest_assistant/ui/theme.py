@@ -158,6 +158,39 @@ class Card(tk.Frame):
         return self._fill
 
 
+class Block(tk.Frame):
+    """A dark plate with a head strip carrying a slanted colour tab with the name. Children go into ``block.body``;
+    small things on the right of the head go into ``block.head``."""
+
+    TABS = {   # colour of the tab, text on it
+        "lime": (None, INK), "green": ("#46c46a", "#0d1f12"), "blue": ("#3da9f5", "#0c1a26"),
+        "amber": ("#e9b93a", INK), "violet": ("#5865f2", "#ffffff"), "grey": ("#3a3a37", "#e9e9e4"),
+    }
+
+    def __init__(self, parent: tk.Misc, title: str, tone: str = "lime", *, padding: tuple[int, int] = (14, 12)) -> None:
+        self.fill = COLORS["surface"]
+        super().__init__(parent, bg=self.fill, highlightthickness=1, highlightbackground=COLORS["border"])
+        color, ink = self.TABS.get(tone, self.TABS["lime"])
+        color = color or COLORS["green"]
+        self.head = tk.Frame(self, bg=COLORS["surface_alt"])
+        self.head.pack(fill="x")
+        tab = tk.Canvas(self.head, bg=COLORS["surface_alt"], highlightthickness=0, height=30)
+        name = tab.create_text(10, 15, text=title.upper(), anchor="w", fill=ink, font=(HEAD, 14))
+        right = tab.bbox(name)[2] + 20
+        tab.tag_raise(name, tab.create_polygon(0, 0, right, 0, right - 10, 30, 0, 30, fill=color, outline=""))
+        tab.configure(width=right + 2)
+        tab.pack(side="left")
+        self.body = tk.Frame(self, bg=self.fill)
+        self.body.pack(fill="both", expand=True, padx=padding[0], pady=padding[1])
+
+    def note(self, text: str = "", *, textvariable: tk.StringVar | None = None, color: str = "muted") -> tk.Label:
+        """A small word on the right of the head."""
+        widget = tk.Label(self.head, text=text.upper(), textvariable=textvariable, bg=COLORS["surface_alt"],
+                          fg=COLORS.get(color, color), font=(FONT, 9))
+        widget.pack(side="right", padx=10)
+        return widget
+
+
 def divider(parent: tk.Misc) -> tk.Frame:
     return tk.Frame(parent, height=1, bg=COLORS["border"])
 
@@ -248,9 +281,9 @@ class PillButton(tk.Canvas):
 
 
 class Toggle(tk.Canvas):
-    """iOS-style switch with an interruptible slide."""
+    """A square switch: lime with a dark knob on the right when on, grey with the knob on the left when off."""
 
-    W, H = 46, 28
+    W, H = 36, 18
 
     def __init__(self, parent: tk.Misc, variable: tk.BooleanVar, command: Callable[[], None] | None = None) -> None:
         super().__init__(parent, width=self.W, height=self.H, bg=parent.cget("bg"), highlightthickness=0, bd=0, cursor="hand2")
@@ -286,13 +319,10 @@ class Toggle(tk.Canvas):
 
     def _draw(self) -> None:
         self.delete("all")
-        fill = blend(COLORS["surface_hi"], COLORS["green"], self._pos)
-        self._track = shape_image(self.W, self.H, self.H / 2, fill)
-        self.create_image(0, 0, anchor="nw", image=self._track)
+        self.create_rectangle(0, 0, self.W - 1, self.H - 1, fill=blend("#2c2c2a", COLORS["green"], self._pos), outline="")
         knob = 3 + (self.W - self.H) * self._pos
-        self._knob = circle_image(self.H - 6, "#ffffff")
-        self.create_image(knob, 3, anchor="nw", image=self._knob)
-
+        self.create_rectangle(knob, 3, knob + self.H - 7, self.H - 4,
+                              fill=blend(COLORS["muted"], INK, self._pos), outline="")
 
 
 class Slider(tk.Canvas):
