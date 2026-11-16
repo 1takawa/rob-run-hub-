@@ -42,6 +42,15 @@ def version(folder: Path = PROJECT_DIR) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+def head(folder: Path = PROJECT_DIR) -> str:
+    """Short hash of the version on disk now (empty when it is not a git copy)."""
+    try:
+        result = _git("rev-parse", "--short", "HEAD", folder=folder, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
 def check(folder: Path = PROJECT_DIR) -> UpdateInfo:
     try:
         if _git("rev-parse", "--is-inside-work-tree", folder=folder, timeout=10).returncode != 0:

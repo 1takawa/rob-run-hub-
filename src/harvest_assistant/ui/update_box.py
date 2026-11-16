@@ -27,13 +27,10 @@ class UpdateBox(tk.Frame):
         self.action = PillButton(self, "Загрузить", self.download, style="primary", padx=16, height=30, size=9)
         self.version = tk.Label(self, text="", bg=bg, fg=COLORS["faint"], font=(FONT, 7), anchor="w")
         self.version.pack(fill="x", pady=(6, 0))
-        self._show_version()
-
-    def _show_version(self) -> None:
-        def work() -> None:
-            text = updater.version()
-            self._post(lambda: self.version.configure(text=f"версия {text}" if text else ""))
-        threading.Thread(target=work, name="version", daemon=True).start()
+        # the version this window runs: files on disk may be newer (downloaded, not restarted yet)
+        self._running = updater.head()
+        text = updater.version()
+        self.version.configure(text=f"версия {text}" if text else "")
 
     def _say(self, text: str, color: str = "muted") -> None:
         self.message.configure(text=text, fg=COLORS.get(color, color))
@@ -56,6 +53,12 @@ class UpdateBox(tk.Frame):
         self._busy = False
         self.check_button.configure(state="normal")
         color = {"latest": "green", "available": "amber", "local_changes": "amber", "error": "red"}.get(info.state, "muted")
+        if info.state == "latest" and self._running and info.local and info.local != self._running:
+            # the newest version is on disk already, but this window still runs the old one
+            self._say(f"Новая версия {info.local} уже скачана. Перезапусти приложение.", "amber")
+            self.action.configure(text="Перезапустить", command=self.restart, state="normal")
+            self.action.pack(anchor="w", pady=(8, 0), before=self.version)
+            return
         self._say(info.message, color)
         if info.changes:
             shown = info.changes[:4]
@@ -84,7 +87,6 @@ class UpdateBox(tk.Frame):
         self.check_button.configure(state="normal")
         self._say(message, "green" if ok else "red")
         self.changes.pack_forget()
-        self._show_version()
         if ok:
             self.action.configure(text="Перезапустить", command=self.restart, state="normal")
             self.action.pack(anchor="w", pady=(8, 0), before=self.version)

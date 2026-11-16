@@ -72,6 +72,14 @@ class UpdaterTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual((self.copy / "app.py").read_text(encoding="utf-8"), "edited by hand")
 
+    def test_head_is_the_version_on_disk(self) -> None:
+        before = updater.head(self.copy)
+        self.commit(self.author, "app.py", "v2", "new")
+        git(self.author, "push", "-q", "origin", "main")
+        updater.apply(self.copy)
+        self.assertNotEqual(updater.head(self.copy), before)          # downloaded: the window must be restarted
+        self.assertEqual(updater.check(self.copy).local, updater.head(self.copy))
+
     def test_a_folder_without_git_says_so(self) -> None:
         plain = self.tmp / "plain"
         plain.mkdir()
