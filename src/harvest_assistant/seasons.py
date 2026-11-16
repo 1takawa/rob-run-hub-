@@ -96,6 +96,9 @@ class SeasonStore:
         with self._lock:
             self._close_current(time.time())
             season = new_season(normalize_code(code), name, started_at, auto_start=auto_start)
+            taken = {s["id"] for s in self.data["seasons"]}
+            while season["id"] in taken:     # the id is the time in ms: two states made in one ms must not share it
+                season["id"] += 1
             self.data["seasons"].append(season)
             self.data["current"] = season["id"]
             self.save()
