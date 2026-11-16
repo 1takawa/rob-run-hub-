@@ -13,7 +13,7 @@ from PIL import Image, ImageTk
 
 from ..loot import LootItem, split_key
 from ..models import InteractionCalibration, Profile
-from .theme import (COLORS, FONT_SEMI, Card, PillButton, ScrollPage, Segmented, Toggle, divider, label, page_header,
+from .theme import (COLORS, FONT_SEMI, Card, HelpTip, PillButton, ScrollPage, Segmented, Toggle, divider, label, page_header,
                     settings_row)
 
 SWATCH = {
@@ -82,7 +82,6 @@ class SettingsPage(tk.Frame):
         self._build_route(farm)
         self._build_collect(farm)
         self._build_timers(farm)
-        self._build_reconnect(body)
         self._build_table_vision(farm)
         self._build_keys(body)
         tk.Frame(body, height=34, bg=COLORS["bg"]).pack()
@@ -109,13 +108,12 @@ class SettingsPage(tk.Frame):
         PillButton(control, "Применить", self.callbacks["apply_window"], style="secondary", padx=16, height=34, size=9).pack(side="right")
         ttk.Entry(control, textvariable=self.window_title_var, width=18).pack(side="right", padx=(0, 8))
         label(card.body, "", size=9, color="muted", bg=card.fill, textvariable=self.window_status).pack(anchor="w", pady=(10, 0))
-        control = settings_row(
-            card,
-            "Фоновое управление",
-            "Оконный режим на втором мониторе. Не сворачивай и не перекрывай игру.",
-        )
-        Toggle(control, self.background_control_var,
-               command=lambda: self.callbacks["toggle_background_control"]()).pack()
+        control = settings_row(card, "Автореконнект")
+        Toggle(control, self.reconnect_var, command=self.callbacks["toggle_reconnect"]).pack(side="right")
+        HelpTip(control, "Если тебя выкинуло из игры в лобби, бот сам вернётся: подтвердит окно «Ранний доступ», "
+                         "нажмёт RUN и дождётся появления персонажа. Вылет он узнаёт по журналу игры (Player.log).\n\n"
+                         "После входа маршрут начнётся сначала, поэтому персонаж должен появляться там, "
+                         "где записан старт.").pack(side="right", padx=(0, 12))
 
     def _build_route(self, body: tk.Frame) -> None:
         card = self._group(body, "Маршрут")
@@ -206,21 +204,6 @@ class SettingsPage(tk.Frame):
             "Выключено: старый режим, повтор записанного маршрута.",
         )
         Toggle(control, self.vision_harvest_var, command=self.callbacks["toggle_vision_harvest"]).pack()
-
-    def _build_reconnect(self, body: tk.Frame) -> None:
-        card = self._group(body, "Автореконнект")
-        control = settings_row(
-            card, "Возвращаться в игру сам",
-            "Если выкинуло в лобби: подтвердит окно «Ранний доступ», нажмёт RUN и дождётся спавна. Вылет определяется по Player.log.",
-            first=True,
-        )
-        Toggle(control, self.reconnect_var, command=self.callbacks["toggle_reconnect"]).pack()
-        control = settings_row(card, "Проверка", "Показывает, какую кнопку скрипт видит на экране прямо сейчас. Ничего не нажимает.")
-        PillButton(control, "Проверить на экране", self.callbacks["scan_reconnect"], style="secondary", padx=16, height=34, size=9).pack(side="right")
-        label(card.body, "", size=9, color="muted", bg=card.fill, textvariable=self.reconnect_note, justify="left",
-              wraplength=560).pack(anchor="w", pady=(10, 0))
-        label(card.body, "После входа маршрут продолжится с начала, поэтому персонаж должен появляться там, где записан старт.",
-              size=9, color="faint", bg=card.fill, justify="left", wraplength=560).pack(anchor="w", pady=(8, 0))
 
     def _build_table_vision(self, body: tk.Frame) -> None:
         card = self._group(body, "Зрение плантации")
