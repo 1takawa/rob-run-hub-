@@ -2,8 +2,7 @@
 
 On every entry into a place the game writes to Player.log the role of the player there (``Init role: hubber``) and
 the kind of server (``...-shooter-...`` or ``...-battle-...``). The role is the code of the place: no screen is
-needed to know where the player is. Only the name of a code has to be told once (Settings -> Discord); the
-player's own plot is known from the start."""
+needed to know where the player is. The known places are in DEFAULTS; any other place is shown as hidden."""
 
 from __future__ import annotations
 

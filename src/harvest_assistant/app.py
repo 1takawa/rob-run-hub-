@@ -276,7 +276,6 @@ class HarvestAssistantApp:
             {
                 "apply_window": self._apply_game_window,
                 "discord_settings_changed": self._save_discord_settings,
-                "place_named": self._name_place,
                 "timer_pause": self._toggle_timer_pause,
                 "apply_settings": self._apply_settings,
                 "set_base_interval": self._set_base_interval,
@@ -1522,7 +1521,6 @@ class HarvestAssistantApp:
         if time.monotonic() - self._last_presence_update >= 15:     # Discord takes one update in 15 s anyway
             self._last_presence_update = time.monotonic()
             self._refresh_discord_presence()
-        self._show_place()
         self.rob_run_info_page.refresh()
         self.root.after(1000, self._tick)
 
@@ -1531,25 +1529,6 @@ class HarvestAssistantApp:
             setattr(self.profile, key, value)
         self.discord_presence.set_enabled(self.profile.discord_enabled)
         self._save_profile(force=True)
-        self._last_presence_update = 0.0
-        self._refresh_discord_presence()
-
-    def _show_place(self) -> None:
-        """Settings -> Discord: where the player is now, by the code from Player.log."""
-        watcher = getattr(self, "game_watch", None)
-        if watcher is None:
-            return
-        if not watcher.in_match:
-            self.settings_page.show_place(None, "Меню / игра закрыта")
-        elif watcher.on_map:
-            self.settings_page.show_place(None, "Карта")
-        elif watcher.place is None:
-            self.settings_page.show_place(None, "Загрузка места…")
-        else:
-            self.settings_page.show_place(watcher.place, self.places.get(watcher.place))
-
-    def _name_place(self, code: str, key: str) -> None:
-        self.places.set(code, key)
         self._last_presence_update = 0.0
         self._refresh_discord_presence()
 
