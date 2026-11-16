@@ -100,11 +100,16 @@ def class_button(frame: np.ndarray, index: int) -> ConfirmButton | None:
 def duty_badge(frame: np.ndarray) -> bool:
     """On duty the game shows a counter in the top right corner: a dark plate with a number and a blue police shield.
     Seen anywhere in the world, not only at the counter of the police."""
+    return duty_badge_box(frame) is not None
+
+
+def duty_badge_box(frame: np.ndarray) -> tuple[int, int, int, int] | None:
+    """The blue shield of the duty counter (x, y, w, h in the frame); the number stands left of it."""
     height, width = frame.shape[:2]
     x_from, y_to = int(width * 0.80), int(height * 0.14)
     region = frame[:y_to, x_from:]
     if not region.size:
-        return False
+        return None
     hsv = cv2.cvtColor(region, cv2.COLOR_RGB2HSV)
     blue = cv2.inRange(hsv, (90, 140, 120), (114, 255, 255))
     contours, _ = cv2.findContours(blue, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -127,5 +132,5 @@ def duty_badge(frame: np.ndarray) -> bool:
         number = hsv[y:y + h, max(0, x - int(1.8 * max(h, w * 1.4))):x]
         light = (number[:, :, 2] > 170) & (number[:, :, 1] < 70)
         if light.sum() >= 0.06 * h * h:
-            return True
-    return False
+            return x + x_from, y, w, h
+    return None

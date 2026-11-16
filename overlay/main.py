@@ -23,6 +23,7 @@ from combat_log import CombatLog
 
 APP_DIR = Path(__file__).resolve().parent
 STATS_PATH = APP_DIR / "stats.json"
+STATS_RESET_PATH = APP_DIR / "stats_reset.flag"  # Harvest Assistant: start the counters over (new season stats)
 SETTINGS_PATH = APP_DIR / "overlay_settings.json"
 LOG_PATH = APP_DIR / "overlay.log"
 FEED_PATH = APP_DIR / "farm_feed.json"  # written by Harvest Assistant: next harvest timer + package counters
@@ -674,6 +675,7 @@ class OverlayApp:
 
     def __init__(self, window: GameWindow) -> None:
         self.window = window
+        self._apply_stats_reset()
         self.store = StatsStore(STATS_PATH)
         self.session_key, self.session = self.store.get_or_create(window)
         self.settings = load_overlay_settings()
@@ -731,6 +733,26 @@ class OverlayApp:
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.bind("<Escape>", lambda _event: self.close())
         self.root.after(150, self._tick)
+
+    @staticmethod
+    def _apply_stats_reset() -> bool:
+        """Harvest Assistant asked to start the counters over: the old file was moved aside by it."""
+        if not STATS_RESET_PATH.exists():
+            return False
+        try:
+            STATS_RESET_PATH.unlink()
+            if STATS_PATH.exists():
+                STATS_PATH.unlink()
+        except OSError:
+            pass
+        return True
+
+    def _check_stats_reset(self) -> None:
+        if self._apply_stats_reset():
+            with self.store.lock:
+                self.store.data = {"version": 1, "sessions": {}}
+            self.session_key, self.session = self.store.get_or_create(self.window)
+            self._stats_dirty = True
 
     def _farm_y_below_card(self, screen_height: int, scale: float, main_y_percent: int) -> int:
         main_height = int(round(self.BASE_HEIGHT * scale))
@@ -2044,6 +2066,7 @@ class OverlayApp:
             self.close()
             return
         self._reload_settings_if_changed()
+        self._check_stats_reset()
         self._check_game_session()
         self._poll_combat_log()
         self._sync_game_visibility()

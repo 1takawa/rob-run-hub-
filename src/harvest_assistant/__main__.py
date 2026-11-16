@@ -65,10 +65,39 @@ def replace_previous_instance(profile_dir: Path) -> None:
     atexit.register(forget)
 
 
+def reset_statistics_once(profiles: Path) -> None:
+    """The season statistics start clean: the old farm statistics, the overlay's knocks/deaths/arrests and the logs are
+    moved into profiles/archive_<date>/ once (nothing is deleted). The overlay is told to forget its counters too."""
+    import shutil
+
+    marker = profiles / ".stats_reset_v1"
+    if marker.exists():
+        return
+    archive = profiles / time.strftime("archive_%Y%m%d_%H%M%S")
+    overlay = profiles.parent / "overlay"
+    moved = [(profiles / "stats.json", archive / "stats.json"), (overlay / "stats.json", archive / "overlay_stats.json"),
+             (profiles / "logs", archive / "logs")]
+    for source, target in moved:
+        if source.exists():
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(source), str(target))
+            except OSError:
+                pass
+    try:
+        if overlay.is_dir():
+            (overlay / "stats_reset.flag").write_text(str(time.time()), encoding="utf-8")
+        profiles.mkdir(parents=True, exist_ok=True)
+        marker.write_text(str(archive.name), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def main() -> None:
     project_dir = Path(__file__).resolve().parents[2]
     profile_path = project_dir / "profiles" / "default.json"
     replace_previous_instance(profile_path.parent)
+    reset_statistics_once(profile_path.parent)
     root = tk.Tk()
     profile = Profile()
     if profile_path.exists():

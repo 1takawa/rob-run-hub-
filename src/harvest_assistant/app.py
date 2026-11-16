@@ -79,6 +79,9 @@ class HarvestAssistantApp:
         self.vision = VisionService(self.template_dir)
         self.loot_reader = LootReader()
         self.stats = StatsStore(profile_path.parent / "stats.json")
+        from .seasons import SeasonStore
+
+        self.seasons = SeasonStore(profile_path.parent / "seasons.json")   # the states (servers) and their seasons
         self.routes_dir = profile_path.parent / "routes"
         self.taught_store = TaughtStore(profile_path.parent / "taught")
         self.profile.loot_totals.clear()  # old lifetime counters: statistics now live in stats.json
@@ -239,7 +242,7 @@ class HarvestAssistantApp:
         self.plantation_page = PlantationPage(self.page_host)
         self.dashboard_page = DashboardPage(self.page_host, dashboard_callbacks, self._on_table_selected, self.profile, self.vision,
                                             self.timer_pause_var, self.stats, tables_parent=self.plantation_page.tables_host)
-        self.stats_page = StatsPage(self.page_host, self.stats)
+        self.stats_page = StatsPage(self.page_host, self.stats, self.seasons)
         self.lab_page = LabPage(
             self.page_host, self.profile, self._save_laboratory,
             lambda stage: self._choose_marker(stage),
@@ -665,6 +668,12 @@ class HarvestAssistantApp:
             lambda kind, text: self._post_to_ui(lambda: self._on_reconnect_event(kind, text)),
         )
         self.reconnector.start()
+        # the season statistics: time in a match, the cop's salary, the server age from the main menu
+        from .game_watch import GameWatcher
+
+        self.game_watch = GameWatcher(lambda: self.screen, self.seasons,
+                                      lambda: self._post_to_ui(self.stats_page.refresh))
+        self.game_watch.start()
 
     def _on_reconnect_event(self, kind: str, text: str) -> None:
         """Runs on the UI thread. The log watcher reports; the route is stopped here."""
@@ -1983,6 +1992,8 @@ class HarvestAssistantApp:
         self._save_profile(force=True)
         overlay_bridge.set_edit_mode(False)
         self.reconnector.stop()
+        if getattr(self, "game_watch", None) is not None:
+            self.game_watch.stop()
         self.table_watcher.stop()
         self.logger.info("Application closed")
         self._closing = True
