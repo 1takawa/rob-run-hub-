@@ -37,6 +37,8 @@ TICK = 2.0             # seconds between reads of Player.log (free: no screen)
 LOOK_EVERY = 6.0       # seconds between looks at the screen in a match (the duty shield)
 GONE_LOOKS = 3         # looks without the shield before a shift counts as ended
 MENU_EVERY = 30.0      # seconds between readings of the server age in the main menu
+# the roles of the game in Player.log («Init role: citizen», «Role changed: citizen -> cop») -> the Discord card
+LOG_ROLES = {"citizen": "civilian", "robber": "criminal", "cop": "police"}
 PARTY_EVERY = 30.0     # seconds between readings of the small party / role labels of the HUD
 
 
@@ -186,7 +188,7 @@ class GameWatcher(threading.Thread):
         self.ocr = _Ocr()
         self.in_match = self.log.last_state() == "battle"
         self.on_duty: bool | None = None
-        self.role: str | None = None
+        self.role: str | None = None            # civilian / criminal / police, from Player.log
         self.in_party: bool | None = None
         self._presence_read_at = 0.0
         self._look_at = 0.0
@@ -257,11 +259,16 @@ class GameWatcher(threading.Thread):
             if event in ("battle", "lobby", "realm"):
                 self.in_match = event != "lobby"
                 self.place_role, self.place_server, self.on_map = None, None, event == "realm"
+                self.role = None
             elif event.startswith("server:"):
                 self.place_server = event.split(":", 1)[1]
             elif event.startswith("role:"):
                 self.place_role = event.split(":", 1)[1]
+                self.role = LOG_ROLES.get(self.place_role)
                 logger.info("place: role=%s server=%s", self.place_role, self.place_server)
+            elif event.startswith("rolechange:"):
+                self.role = LOG_ROLES.get(event.split(":", 1)[1])
+                logger.info("role changed: %s", event.split(":", 1)[1])
 
     @property
     def place(self) -> str | None:
@@ -295,7 +302,6 @@ class GameWatcher(threading.Thread):
         now = time.monotonic()
         if not self.in_match:
             self.on_duty = None
-            self.role = None
             self.in_party = None
             self.see_counter(False, None)      # in the menu or the game is gone: no shift goes on
             # the screen is taken only when it is read: once in MENU_EVERY
@@ -319,13 +325,9 @@ class GameWatcher(threading.Thread):
         visible, value = read_duty_counter(frame, self.ocr)
         self.on_duty = visible
         self.see_counter(visible, value)
-        if visible:
-            self.role = "police"
         if not self.on_map and now - self._presence_read_at >= PARTY_EVERY:
             self._presence_read_at = now
-            role, party = read_presence_hud(frame, self.ocr)
-            if not visible:
-                self.role = role
+            _role, party = read_presence_hud(frame, self.ocr)   # the role comes from Player.log now
             if party is not None:
                 self.in_party = party          # an unread label keeps the last answer
 

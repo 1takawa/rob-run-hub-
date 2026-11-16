@@ -31,6 +31,7 @@ BATTLE = b'NetworkStep - Changed on "InBattle"'
 SPAWNED = b"[Info] Init state:"
 REALM = b'NetworkStep - Changed on "InRealmNotInBattle"'   # the map between places
 ROLE = b"[Info] Init role: "                                  # the role in the place just entered
+ROLE_CHANGED = b"[Info] Role changed: "                       # «citizen -> robber», «citizen -> cop»
 BATTLE_HOST = b"ConnectUpdater.GetAddress started id=battle host="
 
 MAX_ATTEMPTS = 5            # tries per kick
@@ -105,6 +106,8 @@ class PlayerLog:
                 events.append("spawned")
             elif REALM in line:
                 events.append("realm")
+            elif line.startswith(ROLE_CHANGED):
+                events.append("rolechange:" + line.rsplit(b"->", 1)[-1].strip().decode("utf-8", "replace"))
             elif line.startswith(ROLE):
                 events.append("role:" + line[len(ROLE):].strip().decode("utf-8", "replace"))
             elif BATTLE_HOST in line:

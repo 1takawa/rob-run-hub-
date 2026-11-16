@@ -55,3 +55,21 @@ class Places(unittest.TestCase):
             self.assertIsNone(watch.location_key)           # a settlement is never shown
             watch.see_log(["lobby"])
             self.assertIsNone(watch.location_key)
+
+
+class Roles(unittest.TestCase):
+    def test_the_role_comes_from_the_log(self) -> None:
+        lines = [b"[Info] Init role: citizen", b"[Info] Role changed: citizen -> robber",
+                 b"[Info] Role changed: citizen -> cop\r"]
+        self.assertEqual(PlayerLog.parse(lines), ["role:citizen", "rolechange:robber", "rolechange:cop"])
+        watch = GameWatcher(lambda: None, _Seasons(), log=_Log())
+        watch.see_log(["battle", "server:battle", "role:citizen"])
+        self.assertEqual(watch.role, "civilian")
+        watch.see_log(["rolechange:robber"])
+        self.assertEqual(watch.role, "criminal")
+        watch.see_log(["rolechange:cop"])
+        self.assertEqual(watch.role, "police")
+        watch.see_log(["realm"])
+        self.assertIsNone(watch.role)
+        watch.see_log(["battle", "server:battle", "role:hubber"])
+        self.assertIsNone(watch.role)          # in the motel there is no such role
