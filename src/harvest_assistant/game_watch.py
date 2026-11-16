@@ -39,7 +39,6 @@ GONE_LOOKS = 3         # looks without the shield before a shift counts as ended
 MENU_EVERY = 30.0      # seconds between readings of the server age in the main menu
 # the roles of the game in Player.log («Init role: citizen», «Role changed: citizen -> cop») -> the Discord card
 LOG_ROLES = {"citizen": "civilian", "robber": "criminal", "cop": "police"}
-PARTY_EVERY = 30.0     # seconds between readings of the small party / role labels of the HUD
 
 
 class _Ocr:
@@ -142,39 +141,6 @@ def read_duty_counter(frame_rgb: np.ndarray, ocr: _Ocr) -> tuple[bool, int | Non
     return True, value if count >= 2 else None
 
 
-def read_presence_hud(frame_rgb: np.ndarray, ocr: _Ocr) -> tuple[str | None, bool | None]:
-    """Return only role/party values backed by explicit HUD labels; unknown stays unknown."""
-    height, width = frame_rgb.shape[:2]
-    party_crop = frame_rgb[int(height * 0.91):int(height * 0.985), int(width * 0.15):int(width * 0.30)]
-    role_crop = frame_rgb[int(height * 0.89):int(height * 0.985), int(width * 0.38):int(width * 0.66)]
-    party_text = _read_hud_text(party_crop, ocr)
-    role_text = _read_hud_text(role_crop, ocr)
-    if any(marker in party_text for marker in ("SOLO", "СОЛО")):
-        in_party: bool | None = False
-    elif any(marker in party_text for marker in ("DUO", "TRIO", "PARTY", "ПАТИ", "ДУО", "ТРИО")):
-        in_party = True
-    else:
-        in_party = None
-
-    if "СТАТЬПРЕСТУПНИКОМ" in role_text:
-        role = "civilian"
-    elif "СТАТЬПОЛИЦЕЙСКИМ" in role_text:
-        role = "criminal"
-    else:
-        role = None
-    return role, in_party
-
-
-def _read_hud_text(crop: np.ndarray, ocr: _Ocr) -> str:
-    if not crop.size:
-        return ""
-    grey = crop.max(axis=2)
-    enlarged = cv2.resize(grey, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-    _, thresholded = cv2.threshold(enlarged, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    lines = ocr.lines(enlarged) + ocr.lines(thresholded)
-    return "".join("".join(line.upper().split()) for line in lines)
-
-
 class GameWatcher(threading.Thread):
     def __init__(self, get_screen: Callable[[], object | None], seasons: SeasonStore,
                  on_change: Callable[[], None] | None = None, log: PlayerLog | None = None,
@@ -189,8 +155,7 @@ class GameWatcher(threading.Thread):
         self.in_match = self.log.last_state() == "battle"
         self.on_duty: bool | None = None
         self.role: str | None = None            # civilian / criminal / police, from Player.log
-        self.in_party: bool | None = None
-        self._presence_read_at = 0.0
+        self.in_party: bool | None = None       # solo / party: in development (the game does not log it), not read
         self._look_at = 0.0
         self.places = places
         self.place_role: str | None = None      # from Player.log: the role in the place («hubber», «settler» ...)
@@ -306,7 +271,6 @@ class GameWatcher(threading.Thread):
         now = time.monotonic()
         if not self.in_match:
             self.on_duty = None
-            self.in_party = None
             self.see_counter(False, None)      # in the menu or the game is gone: no shift goes on
             # the screen is taken only when it is read: once in MENU_EVERY
             if open_ and now - self._menu_at > MENU_EVERY:
@@ -329,11 +293,6 @@ class GameWatcher(threading.Thread):
         visible, value = read_duty_counter(frame, self.ocr)
         self.on_duty = visible
         self.see_counter(visible, value)
-        if not self.on_map and now - self._presence_read_at >= PARTY_EVERY:
-            self._presence_read_at = now
-            _role, party = read_presence_hud(frame, self.ocr)   # the role comes from Player.log now
-            if party is not None:
-                self.in_party = party          # an unread label keeps the last answer
 
     def stop(self) -> None:
         self.stop_event.set()

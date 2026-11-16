@@ -158,13 +158,15 @@ class SettingsPage(tk.Frame):
         options = (
             ("Полный штат и название", "Если выключить: EU-?????? / NA-?????? без названия штата.", self.discord_show_server_var),
             ("Роль персонажа", "Берётся автоматически из игры.", self.discord_show_role_var),
-            ("Соло / пати", "Берётся автоматически из игры.", self.discord_show_party_var),
             ("Заработок за вайп", "Сумма за текущий сезон.", self.discord_show_earnings_var),
             ("Время за вайп", "Часы в текущем сезоне.", self.discord_show_hours_var),
         )
         for title, hint, variable in options:
             control = settings_row(card, title, hint)
             Toggle(control, variable, command=self._save_discord_settings).pack(side="right")
+            if variable is self.discord_show_role_var:     # solo / party goes right after the role
+                control = settings_row(card, "Соло / пати", "Игра не пишет это в журнал, а экран трекер не читает.")
+                label(control, "В РАЗРАБОТКЕ", size=9, color="amber", bg=card.fill).pack(side="right")
 
     def _save_discord_settings(self) -> None:
         callback = self.callbacks.get("discord_settings_changed")

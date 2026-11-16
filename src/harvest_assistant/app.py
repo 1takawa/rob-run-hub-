@@ -1577,10 +1577,8 @@ class HarvestAssistantApp:
                 summary = self.seasons.summary(season, list(self.stats.data.get("events", [])), sessions)
             watcher = getattr(self, "game_watch", None)
             if in_game:
-                role = getattr(watcher, "role", None)
-                if bool(getattr(watcher, "on_duty", False)):
-                    role = "police"
-                in_party = getattr(watcher, "in_party", None)
+                role = getattr(watcher, "role", None)          # from Player.log
+                # solo / party: in development (the game does not write it to the log), never shown
                 location_key = getattr(watcher, "location_key", None)
             settings = {
                 "discord_show_server": self.profile.discord_show_server,
