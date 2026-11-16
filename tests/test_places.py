@@ -69,6 +69,8 @@ class Roles(unittest.TestCase):
         self.assertEqual(watch.role, "criminal")
         watch.see_log(["rolechange:cop"])
         self.assertEqual(watch.role, "police")
+        watch.see_log(["battle", "server:battle"])        # a reconnect: no new «Init role», the same place
+        self.assertEqual((watch.role, watch.location_key), ("police", "looty_bay"))
         watch.see_log(["realm"])
         self.assertIsNone(watch.role)
         watch.see_log(["battle", "server:battle", "role:hubber"])

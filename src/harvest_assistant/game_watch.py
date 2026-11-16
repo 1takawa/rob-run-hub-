@@ -256,8 +256,12 @@ class GameWatcher(threading.Thread):
     def see_log(self, events: list[str]) -> None:
         """The place from Player.log: main menu, the map, or a place known by its code (also used by the tests)."""
         for event in events:
-            if event in ("battle", "lobby", "realm"):
-                self.in_match = event != "lobby"
+            if event == "battle":
+                # a new place always comes through the map (which forgets the old one); «InBattle» without the map
+                # first is a reconnect to the same place: the game writes no new «Init role» then, so nothing is reset
+                self.in_match, self.on_map = True, False
+            elif event in ("lobby", "realm"):
+                self.in_match = event == "realm"
                 self.place_role, self.place_server, self.on_map = None, None, event == "realm"
                 self.role = None
             elif event.startswith("server:"):
