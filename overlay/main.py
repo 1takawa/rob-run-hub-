@@ -756,6 +756,11 @@ class OverlayApp:
 
     @staticmethod
     def _create_tray_image() -> Image.Image:
+        icon = APP_DIR.parent / "src" / "harvest_assistant" / "assets" / "logo_icon.png"   # the emblem of the hub
+        try:
+            return Image.open(icon).convert("RGBA").resize((64, 64), Image.Resampling.LANCZOS)
+        except OSError:
+            pass
         image = Image.new("RGBA", (64, 64), "#101719")
         draw = ImageDraw.Draw(image)
         draw.rounded_rectangle((1, 1, 62, 62), radius=13, fill="#101719", outline="#465443", width=2)

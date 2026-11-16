@@ -101,6 +101,10 @@ class HarvestAssistantApp:
         self._closing = False
 
         self.root.title("Hidden pool — rob run edition")
+        try:   # the emblem as the icon of the window and the taskbar
+            self.root.iconbitmap(default=str(Path(__file__).resolve().parent / "assets" / "logo_icon.ico"))
+        except tk.TclError:
+            pass
         self.root.geometry("1150x900")
         self.root.minsize(920, 640)
         self._build_ui()
@@ -174,9 +178,15 @@ class HarvestAssistantApp:
         rail.pack(side="left", fill="y")
         rail.pack_propagate(False)
         brand = tk.Frame(rail, bg=COLORS["rail"])
-        brand.pack(fill="x", padx=24, pady=(34, 34))
-        tk.Label(brand, text="Hidden pool", bg=COLORS["rail"], fg=COLORS["text"], font=(FONT_SEMI, 15)).pack(anchor="w")
-        tk.Label(brand, text="ROB RUN EDITION", bg=COLORS["rail"], fg=COLORS["faint"], font=(FONT_SEMI, 7)).pack(anchor="w", pady=(2, 0))
+        brand.pack(fill="x", padx=20, pady=(28, 28))
+        from .ui.home_page import logo_image
+
+        self._brand_logo = logo_image("logo_emblem.png", height=46, bg=COLORS["rail"])
+        tk.Label(brand, image=self._brand_logo, bg=COLORS["rail"]).pack(side="left", padx=(0, 10))
+        names = tk.Frame(brand, bg=COLORS["rail"])
+        names.pack(side="left")
+        tk.Label(names, text="Hidden pool", bg=COLORS["rail"], fg=COLORS["text"], font=(FONT_SEMI, 15)).pack(anchor="w")
+        tk.Label(names, text="ROB RUN EDITION", bg=COLORS["rail"], fg=COLORS["faint"], font=(FONT_SEMI, 7)).pack(anchor="w", pady=(2, 0))
 
         self._nav_buttons: dict[str, NavItem] = {}
         nav = tk.Frame(rail, bg=COLORS["rail"])

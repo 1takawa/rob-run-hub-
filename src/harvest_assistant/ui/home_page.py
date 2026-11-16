@@ -24,6 +24,24 @@ KINDS = {   # tag text, tag colour, text on the tag, heading colour in the notes
     "removed": ("УБРАНО", "#ff7a70", "#2a0f0c", "#ff7a70"),
 }
 CHANGELOG = Path(__file__).resolve().parents[3] / "CHANGELOG.json"
+ASSETS = Path(__file__).resolve().parents[1] / "assets"
+_logos: dict = {}
+
+
+def logo_image(name: str, *, height: int, bg: str | None = None):
+    """A picture of the logo (transparent PNG in assets) at this height, laid on `bg` for tkinter."""
+    from PIL import Image, ImageTk
+
+    key = (name, height, bg)
+    if key not in _logos:
+        image = Image.open(ASSETS / name).convert("RGBA")
+        image = image.resize((max(1, round(image.width * height / image.height)), height), Image.Resampling.LANCZOS)
+        if bg:
+            base = Image.new("RGBA", image.size, bg)
+            base.alpha_composite(image)
+            image = base
+        _logos[key] = ImageTk.PhotoImage(image)
+    return _logos[key]
 
 
 def load_changelog(path: Path = CHANGELOG) -> dict:
@@ -119,9 +137,10 @@ class HomePage(tk.Frame):
     def _hero(self, body: tk.Misc) -> None:
         box = tk.Frame(body, bg=STRIP, highlightthickness=1, highlightbackground=EDGE)
         box.pack(fill="x")
-        canvas = tk.Canvas(box, bg=STRIP, highlightthickness=0, height=116)
+        canvas = tk.Canvas(box, bg=STRIP, highlightthickness=0, height=140)
+        self._emblem = logo_image("logo_emblem.png", height=112, bg=STRIP)
+        self._wordmark = logo_image("logo_wordmark.png", height=80, bg=STRIP)
         canvas.pack(fill="x")
-        project = self.changelog.get("project", "Hidden pool")
         edition = self.changelog.get("edition", "ROB RUN EDITION")
         version = updater.version()
 
@@ -131,15 +150,14 @@ class HomePage(tk.Frame):
             for offset in range(-220, 320, 22):   # honeycomb lines, as on the state card of the game
                 canvas.create_line(width - 260 + offset, 0, width - 260 + offset + 90, 160, fill="#252a1a")
                 canvas.create_line(width - 260 + offset + 90, 0, width - 260 + offset, 160, fill="#252a1a")
-            canvas.create_rectangle(20, 20, 96, 96, fill="#101719", outline=LIME, width=2)          # the logo
-            canvas.create_polygon(36, 58, 58, 36, 80, 58, 58, 80, fill=LIME, outline="")
-            canvas.create_oval(52, 52, 64, 64, fill="#101719", outline="")
-            canvas.create_text(116, 46, text=project.upper(), anchor="w", fill="#ffffff", font=(HEAD, 38))
-            label = canvas.create_text(124, 84, text=edition, anchor="w", fill=INK, font=(HEAD, 10))
+            canvas.create_image(24, 70, image=self._emblem, anchor="w")                              # the logo
+            canvas.create_image(24 + self._emblem.width() + 14, 58, image=self._wordmark, anchor="w")
+            left = 24 + self._emblem.width() + 26
+            label = canvas.create_text(left, 118, text=edition, anchor="w", fill=INK, font=(HEAD, 10))
             x0, y0, x1, y1 = canvas.bbox(label)
             canvas.tag_raise(label, canvas.create_rectangle(x0 - 8, y0 - 2, x1 + 8, y1 + 2, fill=LIME, outline=""))
             if version:
-                canvas.create_text(x1 + 18, 84, text=f"версия {version}", anchor="w", fill=MUTED, font=(BODY, 10))
+                canvas.create_text(x1 + 18, 118, text=f"версия {version}", anchor="w", fill=MUTED, font=(BODY, 10))
             canvas.create_text(width - 22, 34, text="АВТОР", anchor="e", fill=MUTED, font=(BODY, 9))
 
         canvas.bind("<Configure>", draw)
