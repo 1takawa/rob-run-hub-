@@ -22,8 +22,9 @@ CHOICES = {
 }
 # known from the game itself:
 #   «settler» — the role on a settlement (a plot): hidden, whose and where is nobody's business;
-#   «citizen» — the civilian role exists only in Looty Bay (on «battle» and «shooter» servers alike)
-DEFAULTS = {"settler": "hidden", "citizen": "looty_bay"}
+#   «citizen» — the civilian role exists only in Looty Bay (on «battle» and «shooter» servers alike);
+#   «hubber»  — Motel Lenny
+DEFAULTS = {"settler": "hidden", "citizen": "looty_bay", "hubber": "motel_lenny"}
 
 
 def place_code(role: str | None, server: str | None = None) -> str | None:
