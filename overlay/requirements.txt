@@ -1,0 +1,4 @@
+Pillow>=10.4
+psutil>=6,<8
+pywin32>=306
+pystray>=0.19.5,<1

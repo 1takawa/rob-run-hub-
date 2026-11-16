@@ -1,0 +1,23 @@
+# Python environments and caches
+.venv/
+overlay/.venv/
+__pycache__/
+*.pyc
+*.tmp
+
+# Personal data of this computer: profile, recorded runs, logs, stats (never uploaded)
+profiles/
+
+# Overlay runtime files (written while it runs)
+overlay/overlay.log
+overlay/setup.log
+overlay/stats.json
+overlay/overlay_settings.json
+overlay/*_feed.json
+overlay/overlay_heartbeat.json
+overlay/overlay_command.json
+overlay/overlay_edit.json
+
+# Local leftovers
+backup_old_calibration/
+.superpowers/

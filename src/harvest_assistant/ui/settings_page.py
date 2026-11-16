@@ -1,0 +1,409 @@
+"""Settings: everything about the app itself, in one calm column."""
+
+from __future__ import annotations
+
+import time
+import tkinter as tk
+from tkinter import ttk
+from types import SimpleNamespace
+from typing import Callable
+
+import numpy as np
+from PIL import Image, ImageTk
+
+from ..loot import LootItem, split_key
+from ..models import InteractionCalibration, Profile
+from .theme import (COLORS, FONT_SEMI, Card, PillButton, ScrollPage, Segmented, Toggle, divider, label, page_header,
+                    settings_row)
+
+SWATCH = {
+    "красный": "#ff6b72", "оранжевый": "#f08a24", "жёлтый": "#f5c542", "зелёный": "#46c46a", "голубой": "#4cc2e0",
+    "синий": "#4a7bf0", "фиолетовый": "#b06cf0", "розовый": "#f06cb0", "белый": "#f5f5f7", "серый": "#8e8e93",
+}
+
+
+class SettingsPage(tk.Frame):
+    HOTKEYS = (
+        ("Запись маршрута", "record_route_hotkey"),
+        ("Отметить стол", "mark_waypoint_hotkey"),
+        ("Старт / пауза", "pause_hotkey"),
+        ("Аварийный стоп", "stop_hotkey"),
+        ("Автосбор вкл / выкл", "auto_hotkey"),
+        ("Записать путь до столов", "approach_hotkey"),
+        ("Пройти путь до столов", "visual_hotkey"),
+        ("Прочитать пакеты", "loot_hotkey"),
+    )
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        callbacks: dict[str, Callable[[], None]],
+        profile: Profile,
+        timer_pause_var: tk.BooleanVar,
+    ) -> None:
+        super().__init__(parent, bg=COLORS["bg"])
+        self.callbacks = callbacks
+        self.profile = profile
+        self.timer_pause_var = timer_pause_var
+        self.window_title_var = tk.StringVar(value=profile.target_window_title_match)
+        self.background_control_var = tk.BooleanVar(value=profile.background_control)
+        self.clock_mode_var = tk.StringVar(value=profile.clock_mode)
+        self.auto_var = tk.BooleanVar(value=profile.auto_collect)
+        self.reconnect_var = tk.BooleanVar(value=profile.auto_reconnect)
+        self.table_vision_var = tk.BooleanVar(value=profile.table_vision)
+        self.vision_harvest_var = tk.BooleanVar(value=profile.vision_harvest)
+        self.table_vision_note = tk.StringVar(value="")
+        self.reconnect_note = tk.StringVar(value="")
+        first = profile.tables[0].interval_seconds if profile.tables else 3600
+        self.base_var = tk.StringVar(value=f"{first // 60}:{first % 60:02d}" if first % 60 else str(first // 60))
+        self.base_note = tk.StringVar(value="")
+        self.hotkey_vars = {attribute: tk.StringVar(value=getattr(profile, attribute)) for _, attribute in self.HOTKEYS}
+        self.window_status = tk.StringVar(value="Окно не привязано")
+        self.hotkey_help = tk.StringVar(value="")
+        self.route_state = tk.StringVar(value="Маршрут не записан")
+        self.route_detail = tk.StringVar(value="")
+        self.waiting_state = tk.StringVar(value="")
+        self.key_var = tk.StringVar(value=profile.interaction.key)
+        self.wait_var = tk.StringVar(value=f"{profile.interaction.harvest_seconds:g}")
+        self.collect_note = tk.StringVar(value="")
+        self.loot_result = tk.StringVar(value="")
+        self.totals_text = tk.StringVar(value="")
+        self._preview: ImageTk.PhotoImage | None = None
+        self._game_open = False
+
+        scroll = ScrollPage(self, max_width=720)
+        scroll.pack(fill="both", expand=True)
+        body = scroll.inner
+        page_header(body, "Настройки", "Приложение и плантация").pack(fill="x", pady=(34, 22), padx=4)
+        self._build_game(body)
+        self._build_route(body)
+        self._build_collect(body)
+        self._build_timers(body)
+        self._build_reconnect(body)
+        self._build_table_vision(body)
+        self._build_keys(body)
+        tk.Frame(body, height=34, bg=COLORS["bg"]).pack()
+
+        # The app talks to these two like to the pages they replaced.
+        self._route_signature: tuple | None = None
+        self._taught_count = -1
+        self.render_taught()
+        self.route = SimpleNamespace(refresh=self._refresh_route)
+        self.render_saved()
+        self.collect = SimpleNamespace(refresh=self._refresh_collect, set_services=lambda *_: None, show_loot=self.show_loot)
+
+    # ---- sections ----------------------------------------------------------------------
+
+    def _group(self, parent: tk.Frame, title: str) -> Card:
+        label(parent, title, size=12, font=FONT_SEMI, color="muted").pack(anchor="w", padx=6, pady=(0, 8))
+        card = Card(parent, padding=(26, 20), radius=20)
+        card.pack(fill="x", pady=(0, 26))
+        return card
+
+    def _build_game(self, body: tk.Frame) -> None:
+        card = self._group(body, "Игра")
+        control = settings_row(card, "Окно игры", "Часть заголовка. Проще всего: в игре нажми Ctrl+F10.", first=True)
+        PillButton(control, "Применить", self.callbacks["apply_window"], style="secondary", padx=16, height=34, size=9).pack(side="right")
+        ttk.Entry(control, textvariable=self.window_title_var, width=18).pack(side="right", padx=(0, 8))
+        label(card.body, "", size=9, color="muted", bg=card.fill, textvariable=self.window_status).pack(anchor="w", pady=(10, 0))
+        control = settings_row(
+            card,
+            "Фоновое управление",
+            "Оконный режим на втором мониторе. Не сворачивай и не перекрывай игру.",
+        )
+        Toggle(control, self.background_control_var,
+               command=lambda: self.callbacks["toggle_background_control"]()).pack()
+
+    def _build_route(self, body: tk.Frame) -> None:
+        card = self._group(body, "Маршрут")
+        label(card.body, "", size=12, bg=card.fill, textvariable=self.route_state).pack(anchor="w")
+        label(card.body, "", size=9, color="muted", bg=card.fill, textvariable=self.route_detail, justify="left", wraplength=560).pack(anchor="w", pady=(4, 14))
+        row = tk.Frame(card.body, bg=card.fill)
+        row.pack(fill="x")
+        self.record_button = PillButton(row, "Записать основной", self.callbacks["toggle_recording"], style="primary", padx=20, height=38)
+        self.record_button.pack(side="left")
+        self.mark_button = PillButton(row, "Отметить стол", self.callbacks["mark_waypoint"], style="secondary", padx=18, height=38)
+        self.mark_button.pack(side="left", padx=(8, 0))
+        label(card.body, "Обе записи начинаются и заканчиваются на общем старте. В основном маршруте F6 отмечает стол, Ctrl+F3 — лабораторию.",
+              size=9, color="faint", bg=card.fill, justify="left", wraplength=560).pack(anchor="w", pady=(14, 0))
+        row = tk.Frame(card.body, bg=card.fill)
+        row.pack(fill="x", pady=(12, 0))
+        self.waiting_button = PillButton(row, "Записать ожидание", self.callbacks["record_waiting"], style="secondary", padx=11, height=34, size=9)
+        self.waiting_button.pack(side="left", padx=(0, 6))
+        PillButton(row, "Общий старт", self.callbacks["start_marker"], style="secondary", padx=11, height=34, size=9).pack(side="left", padx=(0, 6))
+        self.clear_waiting_button = PillButton(row, "Убрать ожидание", self.callbacks["clear_waiting"], style="ghost", padx=8, height=34, size=9)
+        self.clear_waiting_button.pack(side="left")
+        label(card.body, "", textvariable=self.waiting_state, size=9, color="muted", bg=card.fill,
+              wraplength=560, justify="left").pack(anchor="w", pady=(6, 0))
+        divider(card.body).pack(fill="x", pady=16)
+        label(card.body, "Путь до столов", size=11, bg=card.fill).pack(anchor="w")
+        label(card.body, "Встань в комнате спавна, нажми F2, при желании медленно осмотрись по кругу, пройди до столов, у дверей жми E, "
+              "и нажми F2 ещё раз. Один заход = один урок. Запиши несколько заходов из разных точек комнаты, и бот сможет стартовать откуда угодно.",
+              size=9, color="muted", bg=card.fill, wraplength=560, justify="left").pack(anchor="w", pady=(4, 8))
+        record_row = tk.Frame(card.body, bg=card.fill)
+        record_row.pack(fill="x")
+        self.approach_button = PillButton(record_row, "Записать заход (F2)", self.callbacks["approach_record"], style="primary", padx=16, height=34, size=9)
+        self.approach_button.pack(side="left")
+        self.approach_note = tk.StringVar(value="")
+        label(card.body, "", size=9, color="muted", bg=card.fill, textvariable=self.approach_note, wraplength=560,
+              justify="left").pack(anchor="w", pady=(6, 6))
+        self.taught_rows = tk.Frame(card.body, bg=card.fill)
+        self.taught_rows.pack(fill="x", pady=(0, 14))
+        label(card.body, "Пройти путь · зрительная проверка", size=11, bg=card.fill).pack(anchor="w")
+        label(card.body, "От спавна в доме через две двери до комнаты со столами. Столы и таймеры тест не трогает.",
+              size=9, color="muted", bg=card.fill, wraplength=560, justify="left").pack(anchor="w", pady=(4, 10))
+        visual_row = tk.Frame(card.body, bg=card.fill)
+        visual_row.pack(fill="x")
+        self.visual_test_button = PillButton(visual_row, "Тестировать путь (F3)", self.callbacks["visual_test"],
+                                             style="secondary", padx=16, height=34, size=9)
+        self.visual_test_button.pack(side="left")
+        PillButton(visual_row, "Остановить тест", self.callbacks["visual_stop"], style="ghost",
+                   padx=12, height=34, size=9).pack(side="left", padx=(8, 0))
+        divider(card.body).pack(fill="x", pady=16)
+        head = tk.Frame(card.body, bg=card.fill)
+        head.pack(fill="x")
+        label(head, "Сохранённые маршруты", size=11, bg=card.fill).pack(side="left")
+        PillButton(head, "Сохранить текущий", self.callbacks["save_route"], style="secondary", padx=14, height=32, size=9).pack(side="right")
+        label(card.body, "Прежний маршрут сохраняется сам, когда его заменяют или стирают.", size=9, color="faint", bg=card.fill).pack(anchor="w", pady=(4, 8))
+        self.saved_rows = tk.Frame(card.body, bg=card.fill)
+        self.saved_rows.pack(fill="x")
+
+    def _build_collect(self, body: tk.Frame) -> None:
+        card = self._group(body, "Сбор урожая")
+        control = settings_row(card, "Клавиша сбора", first=True)
+        ttk.Entry(control, textvariable=self.key_var, width=6).pack(side="right")
+        control = settings_row(card, "Ждать список пакетов", "Максимум секунд после нажатия")
+        PillButton(control, "Сохранить", self._save_collect, style="secondary", padx=14, height=32, size=9).pack(side="right")
+        ttk.Entry(control, textvariable=self.wait_var, width=6).pack(side="right", padx=(0, 8))
+        control = settings_row(card, "Проверка распознавания", "Сделай сбор вручную и сразу нажми кнопку или клавишу в игре.")
+        self.read_button = PillButton(control, "Прочитать", self.callbacks["read_loot"], style="secondary", padx=16, height=34, size=9)
+        self.read_button.pack(side="right")
+        self.loot_rows = tk.Frame(card.body, bg=card.fill)
+        self.loot_rows.pack(fill="x", pady=(10, 0))
+        label(card.body, "", size=9, color="muted", bg=card.fill, textvariable=self.loot_result, justify="left", wraplength=560).pack(anchor="w")
+        self.preview = tk.Label(card.body, bg=card.fill)
+        self.preview.pack(anchor="w", pady=(8, 0))
+        label(card.body, "", size=9, color="muted", bg=card.fill, textvariable=self.collect_note).pack(anchor="w", pady=(6, 0))
+
+    def _build_timers(self, body: tk.Frame) -> None:
+        card = self._group(body, "Таймеры")
+        control = settings_row(card, "Как идёт отсчёт", first=True)
+        Segmented(control, self.clock_mode_var, [("wall_clock", "Всегда"), ("game_open", "Пока игра открыта")]).pack()
+        control = settings_row(card, "Время роста без улучшений", "Минуты (40) или мин:сек (37:30). Улучшения сокращают его сами.", first=False)
+        PillButton(control, "Сохранить", self._save_base, style="secondary", padx=14, height=32, size=9).pack(side="right")
+        ttk.Entry(control, textvariable=self.base_var, width=7).pack(side="right", padx=(0, 8))
+        label(card.body, "", size=9, color="muted", bg=card.fill, textvariable=self.base_note).pack(anchor="w", pady=(6, 0))
+        control = settings_row(card, "Автосбор", "Когда таймер кончается, цикл начинается заново сам. Без него — один цикл.")
+        Toggle(control, self.auto_var, command=self.callbacks["toggle_auto"]).pack()
+        control = settings_row(card, "Приостановить рост", "Таймеры замрут, автосбор будет ждать")
+        Toggle(control, self.timer_pause_var, command=self.callbacks["timer_pause"]).pack()
+        control = settings_row(
+            card, "Сбор по зрению",
+            "Скрипт сам доходит до плантации по записанным заходам (F2), находит столы по значку, подходит и собирает. "
+            "Выключено: старый режим, повтор записанного маршрута.",
+        )
+        Toggle(control, self.vision_harvest_var, command=self.callbacks["toggle_vision_harvest"]).pack()
+
+    def _build_reconnect(self, body: tk.Frame) -> None:
+        card = self._group(body, "Автореконнект")
+        control = settings_row(
+            card, "Возвращаться в игру сам",
+            "Если выкинуло в лобби: подтвердит окно «Ранний доступ», нажмёт RUN и дождётся спавна. Вылет определяется по Player.log.",
+            first=True,
+        )
+        Toggle(control, self.reconnect_var, command=self.callbacks["toggle_reconnect"]).pack()
+        control = settings_row(card, "Проверка", "Показывает, какую кнопку скрипт видит на экране прямо сейчас. Ничего не нажимает.")
+        PillButton(control, "Проверить на экране", self.callbacks["scan_reconnect"], style="secondary", padx=16, height=34, size=9).pack(side="right")
+        label(card.body, "", size=9, color="muted", bg=card.fill, textvariable=self.reconnect_note, justify="left",
+              wraplength=560).pack(anchor="w", pady=(10, 0))
+        label(card.body, "После входа маршрут продолжится с начала, поэтому персонаж должен появляться там, где записан старт.",
+              size=9, color="faint", bg=card.fill, justify="left", wraplength=560).pack(anchor="w", pady=(8, 0))
+
+    def _build_table_vision(self, body: tk.Frame) -> None:
+        card = self._group(body, "Зрение плантации")
+        control = settings_row(
+            card, "Видеть столы",
+            "Оверлей обводит стол по значку над ним: листок с часами, значит растёт, листок с зелёной галочкой, значит готов. "
+            "После каждого сбора по маршруту хаб запоминает, как выглядит этот стол, и потом подписывает его именем и своим таймером. "
+            "Работает, когда игра в фокусе или включено фоновое управление, и автопилот не идёт.",
+            first=True,
+        )
+        Toggle(control, self.table_vision_var, command=self.callbacks["toggle_table_vision"]).pack()
+        label(card.body, "", size=9, color="muted", bg=card.fill, textvariable=self.table_vision_note, justify="left",
+              wraplength=560).pack(anchor="w", pady=(10, 0))
+
+    def _build_keys(self, body: tk.Frame) -> None:
+        card = self._group(body, "Горячие клавиши")
+        for index, (title, attribute) in enumerate(self.HOTKEYS):
+            control = settings_row(card, title, first=index == 0)
+            ttk.Entry(control, textvariable=self.hotkey_vars[attribute], width=12).pack()
+        label(card.body, "WASD, E и Shift нужны маршруту. Ctrl+F10 — привязка игры, Ctrl+F3 — отметка лаборатории.",
+              size=9, color="faint", bg=card.fill, justify="left", wraplength=560).pack(anchor="w", pady=(12, 0))
+        row = tk.Frame(card.body, bg=card.fill)
+        row.pack(fill="x", pady=(14, 0))
+        PillButton(row, "Сохранить", self.callbacks["apply_settings"], style="primary", padx=26, height=40).pack(side="left")
+
+    # ---- public API used by the app -----------------------------------------------------
+
+    def _save_base(self) -> None:
+        text = self.base_var.get().strip().replace(",", ".")
+        try:
+            if ":" in text:
+                minutes, seconds = text.split(":")
+                total = int(minutes) * 60 + int(seconds)
+            else:
+                total = round(float(text) * 60)
+        except ValueError:
+            self.base_note.set("Введи число минут, например 40 или 37:30")
+            return
+        if total < 60:
+            self.base_note.set("Слишком мало: минимум 1 минута")
+            return
+        self.callbacks["set_base_interval"](total)
+        self.base_note.set(f"Сохранено: {total // 60}:{total % 60:02d}. Уже идущие таймеры не менялись — поправь их кнопкой «Время».")
+
+    def read_values(self) -> dict[str, str]:
+        return {"clock_mode": self.clock_mode_var.get(), **{key: value.get().strip().lower() for key, value in self.hotkey_vars.items()}}
+
+    def refresh(self, profile: Profile, window_status: str) -> None:
+        self.profile = profile
+        self.window_status.set(window_status)
+        if self.background_control_var.get() != profile.background_control:
+            self.background_control_var.set(profile.background_control)
+        if self.timer_pause_var.get() != profile.manual_timer_paused:
+            self.timer_pause_var.set(profile.manual_timer_paused)
+
+    def refresh_waiting(self, recording: bool, game_open: bool) -> None:
+        route = self.profile.waiting_route
+        marker = "общий старт выбран" if self.profile.start_marker.template else "выбери общий старт"
+        status = f"Запись ожидания идёт. Заверши её в игре: {self.profile.record_route_hotkey.upper()}." if recording else (
+            f"Ожидание записано · {route.duration_seconds:.1f} с · {marker}." if route.events else
+            f"Петля ожидания не записана · {marker}."
+        )
+        if self.waiting_state.get() != status:
+            self.waiting_state.set(status)
+        self.waiting_button.configure(text="Завершить ожидание" if recording else "Записать ожидание",
+                                      state="normal" if game_open else "disabled")
+        self.clear_waiting_button.configure(state="normal" if route.events and not recording else "disabled")
+        self.visual_test_button.configure(state="normal" if game_open and not recording else "disabled")
+
+    def update_hotkey_help(self, profile: Profile) -> None:
+        self.hotkey_help.set("")
+
+    # ---- route --------------------------------------------------------------------------
+
+    def render_taught(self) -> None:
+        for child in self.taught_rows.winfo_children():
+            child.destroy()
+        fill = self.taught_rows.cget("bg")
+        runs = self.callbacks["taught_list"]()
+        for run in runs:
+            row = tk.Frame(self.taught_rows, bg=fill)
+            row.pack(fill="x", pady=3)
+            label(row, run.label, size=10, bg=fill).pack(side="left")
+            label(row, f"{run.duration:.0f} с · кадров {len(run.keyframes)}", size=9, color="muted", bg=fill).pack(side="left", padx=(10, 0))
+            PillButton(row, "×", lambda r=run.run_id: self.callbacks["taught_delete"](r), style="ghost", padx=12, height=28, size=10).pack(side="right")
+        self._taught_count = len(runs)
+
+    def render_saved(self) -> None:
+        for child in self.saved_rows.winfo_children():
+            child.destroy()
+        saved = self.callbacks["list_routes"]()
+        fill = self.saved_rows.cget("bg")
+        if not saved:
+            label(self.saved_rows, "Пока ничего не сохранено.", size=9, color="muted", bg=fill).pack(anchor="w")
+            return
+        for item in saved[:6]:
+            row = tk.Frame(self.saved_rows, bg=fill)
+            row.pack(fill="x", pady=4)
+            text = tk.Frame(row, bg=fill)
+            text.pack(side="left", fill="x", expand=True)
+            label(text, item["label"], size=10, bg=fill).pack(anchor="w")
+            when = time.strftime("%d.%m.%Y %H:%M", time.localtime(item["saved_at"]))
+            label(text, f"{when} · столов {item['waypoints']} · {item['duration']:.0f} с" + (f" · {item['reason']}" if item["reason"] else ""),
+                  size=9, color="muted", bg=fill).pack(anchor="w")
+            PillButton(row, "×", lambda p=item["path"]: self.callbacks["delete_route"](p), style="ghost", padx=12, height=30, size=10).pack(side="right")
+            PillButton(row, "Загрузить", lambda p=item["path"]: self.callbacks["load_route"](p), style="secondary", padx=14, height=30, size=9).pack(side="right", padx=(0, 6))
+        if len(saved) > 6:
+            label(self.saved_rows, f"Показаны 6 из {len(saved)} (новые сверху).", size=9, color="faint", bg=fill).pack(anchor="w", pady=(4, 0))
+
+    def _refresh_route(self, profile: Profile, is_recording: bool, camera_ok: bool, game_open: bool, marked_ids: set[str] | None) -> None:
+        count = max(0, self._taught_count)
+        self.approach_note.set(
+            f"Заходов обучения: {count}. F3 найдёт дорогу по ним." if count
+            else "Заходов нет: F3 ищет дорогу по картинкам (менее надёжно)."
+        )
+        signature = (len(profile.route.waypoints), profile.route.lab_offset, round(profile.route.duration_seconds, 1), is_recording)
+        if signature != self._route_signature:
+            self._route_signature = signature
+            self.render_saved()
+        marked = marked_ids or set()
+        route = profile.route
+        if is_recording:
+            self.route_state.set("● Идёт запись")
+            self.route_detail.set(f"Отмечено столов: {len(marked)} из {len(profile.tables)}")
+        elif route.waypoints or route.lab_offset is not None:
+            self.route_state.set("Маршрут записан")
+            lab = " · лаборатория" if route.lab_offset is not None else ""
+            self.route_detail.set(f"{len(route.waypoints)} столов{lab} · {route.duration_seconds:.0f} с")
+        else:
+            self.route_state.set("Маршрут не записан")
+            self.route_detail.set("Запиши обход столов, лаборатории или обеих зон.")
+        self.record_button.configure(text="Завершить запись" if is_recording else "Записать основной",
+                                     state="normal" if game_open else "disabled")
+        self.mark_button.configure(state="normal" if is_recording and game_open else "disabled")
+
+    # ---- collect ------------------------------------------------------------------------
+
+    def _refresh_collect(self, automation_active: bool = False) -> None:
+        interaction = self.profile.interaction
+        if not self.key_var.get():
+            self.key_var.set(interaction.key)
+
+    def _save_collect(self) -> None:
+        key = self.key_var.get().strip().lower()
+        try:
+            wait = float(self.wait_var.get().replace(",", "."))
+        except ValueError:
+            self.collect_note.set("Время ожидания — число, например 6")
+            return
+        if not key or wait <= 0:
+            self.collect_note.set("Укажи клавишу и время больше нуля")
+            return
+        if not self.callbacks["before_edit"]():
+            return
+        current = self.profile.interaction
+        self.profile.interaction = InteractionCalibration(
+            key=key, mode=current.mode, hold_seconds=current.hold_seconds,
+            progress_timeout_seconds=current.progress_timeout_seconds, harvest_seconds=wait,
+        )
+        self.callbacks["profile_changed"]()
+        self.collect_note.set("Сохранено")
+
+    def show_loot(self, items: list[LootItem], crop: np.ndarray | None, error: str | None = None) -> None:
+        for child in self.loot_rows.winfo_children():
+            child.destroy()
+        if error:
+            self.loot_result.set(f"Не удалось распознать: {error}")
+        elif not items:
+            self.loot_result.set("Список пакетов не найден. Нажми сразу после сбора, пока он на экране.")
+        else:
+            self.loot_result.set("")
+            for item in items:
+                self._loot_row(self.loot_rows, item.color, item.name, item.count)
+        if crop is not None and getattr(crop, "size", 0):
+            image = Image.fromarray(crop)
+            image.thumbnail((360, 190))
+            self._preview = ImageTk.PhotoImage(image)
+            self.preview.configure(image=self._preview)
+        else:
+            self.preview.configure(image="")
+
+    @staticmethod
+    def _loot_row(parent: tk.Frame, color: str, name: str, count: int) -> None:
+        bg = parent.cget("bg")
+        row = tk.Frame(parent, bg=bg)
+        row.pack(fill="x", pady=2)
+        tk.Frame(row, width=4, height=16, bg=SWATCH.get(color, COLORS["muted"])).pack(side="left", padx=(0, 10))
+        label(row, f"{count} ×  {name}", size=10, bg=bg).pack(side="left")
+        label(row, color, size=9, color="muted", bg=bg).pack(side="right")

@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+stats.json
+stats.tmp
+overlay_settings.json
+overlay_settings.tmp
+overlay.log
+setup.log
+farm_feed.json
+overlay_heartbeat.json
+overlay_command.json
+overlay_edit.json
