@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 TRACKER_URL = "https://github.com/1takawa/rob-run-hub-"
 DISCORD_APPLICATION_ID = "1571948762367262760"
-SMALL_ASSET_KEY = "hidden_pool"
+SMALL_ASSET_KEY = "discord_asset_hidden_pool"   # the names as uploaded to the Developer Portal (Art Assets)
 RPC_UPDATE_INTERVAL = 15.0   # Discord itself allows one update in 15 s
 ROLE_LABELS = {
     "criminal": "Грабитель",
@@ -21,14 +21,14 @@ ROLE_LABELS = {
     "civilian": "Гражданский",
 }
 LOCATION_ASSETS = {
-    "map": ("Карта", "location_map"),
-    "looty_bay": ("Лути-Бей", "location_looty_bay"),
-    "motel_lenny": ("Мотель Лени", "location_motel_lenny"),
-    "prison": ("Тюрьма", "location_prison"),
-    "events_center": ("Центр событий", "location_map"),
-    "city": ("Город", "location_map"),
+    "map": ("Карта", "discord_asset_location_map"),
+    "looty_bay": ("Лути-Бей", "discord_asset_location_looty_bay"),
+    "motel_lenny": ("Мотель Лени", "discord_asset_location_motel_lenny"),
+    "prison": ("Тюрьма", "discord_asset_location_prison"),
+    "events_center": ("Центр событий", "discord_asset_location_map"),
+    "city": ("Город", "discord_asset_location_map"),
 }
-HIDDEN_LOCATION_ASSET = "location_hidden"
+HIDDEN_LOCATION_ASSET = "discord_location_hidden"
 
 
 def _money(value: int) -> str:

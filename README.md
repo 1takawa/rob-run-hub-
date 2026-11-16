@@ -30,16 +30,16 @@
 
 Discord должен быть запущен, а активность ROB RUN разрешена в настройках Discord. Application ID зафиксирован в приложении и не показывается в интерфейсе. В «Настройках» можно отдельно скрыть штат, роль, доход и часы вайпа (соло / пати — в разработке: игра не пишет это в журнал); при скрытом штате остаётся маска `EU-??????` или `NA-??????`. Статус и локация не отключаются.
 
-Загрузи изображения в [Developer Portal](https://discord.com/developers/applications) → приложение ROB RUN → **Rich Presence → Art Assets** и задай ключи точно как в таблице:
+Загрузи изображения в [Developer Portal](https://discord.com/developers/applications) → приложение ROB RUN → **Rich Presence → Art Assets** — имя ключа Discord подставит сам из имени файла, оно и нужно:
 
 | Ключ Discord | Файл в `src/harvest_assistant/assets/` | Использование |
 |---|---|---|
-| `hidden_pool` | `discord_asset_hidden_pool.png` | Маленький круглый знак Hidden Pool поверх основной картинки |
-| `location_hidden` | `discord_location_hidden.png` | Чёрная заглушка с белым `?` |
-| `location_map` | `discord_asset_location_map.png` | Нейтральная карта без названия штата и маркеров |
-| `location_motel_lenny` | `discord_asset_location_motel_lenny.png` | Большая квадратная карточка Motel Lenny |
-| `location_looty_bay` | `discord_asset_location_looty_bay.png` | Большая квадратная карточка Looty Bay |
-| `location_prison` | `discord_asset_location_prison.png` | Большая квадратная карточка тюрьмы |
+| `discord_asset_hidden_pool` | `discord_asset_hidden_pool.png` | Маленький круглый знак Hidden Pool поверх основной картинки |
+| `discord_location_hidden` | `discord_location_hidden.png` | Чёрная заглушка с белым `?` |
+| `discord_asset_location_map` | `discord_asset_location_map.png` | Нейтральная карта без названия штата и маркеров |
+| `discord_asset_location_motel_lenny` | `discord_asset_location_motel_lenny.png` | Большая квадратная карточка Motel Lenny |
+| `discord_asset_location_looty_bay` | `discord_asset_location_looty_bay.png` | Большая квадратная карточка Looty Bay |
+| `discord_asset_location_prison` | `discord_asset_location_prison.png` | Большая квадратная карточка тюрьмы |
 
 Оригинальные панорамы от пользователя сохранены рядом как `discord_location_*.png`; квадратные версии готовы для загрузки в карточку Discord. Арт карты специально не содержит название штата, подписи и маркеры.
 
