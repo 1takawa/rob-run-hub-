@@ -178,6 +178,11 @@ class SeasonStore:
                 for key in combat:
                     combat[key] += int(record.get(key, 0) or 0)
         playtime = float(season.get("playtime", 0.0))
+        fixed = season.get("fixed") or {}
+        if fixed:   # a season from before the statistics: its numbers were taken from the sentence and the old logs
+            total = int(fixed.get("total", total))
+            for key in combat:
+                combat[key] = int(fixed.get(key, combat[key]))
         wipe_at = start + WIPE_SECONDS
         return {
             "counts": counts, "packages": packages, "salary": salary, "shifts": int(season.get("shifts", 0)),

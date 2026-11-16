@@ -364,6 +364,31 @@ class AutocopRunner:
             except Exception:
                 self._logger.debug("autocop feed failed", exc_info=True)
 
+    def _trace(self, frame: np.ndarray, button) -> None:
+        """A picture of what the bot saw when it could not press the class (at most every 30 s), for a look later."""
+        now = time.monotonic()
+        if now - getattr(self, "_traced_at", 0.0) < 30.0:
+            return
+        self._traced_at = now
+        try:
+            from pathlib import Path
+
+            from .loadout_vision import find_confirm_buttons
+
+            row = find_confirm_buttons(frame)
+            self._logger.info("autocop: class screen, %d buttons seen %s; chosen %s -> %s", len(row),
+                              [(b.x, b.y, b.width, b.active) for b in row], self.selected_class,
+                              None if button is None else (button.x, button.width, button.active))
+            folder = Path(__file__).resolve().parents[2] / "profiles" / "logs" / "autocop_trace"
+            folder.mkdir(parents=True, exist_ok=True)
+            name = folder / time.strftime("%H%M%S.jpg")
+            small = cv2.resize(frame, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
+            cv2.imencode(".jpg", cv2.cvtColor(small, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 75])[1].tofile(str(name))
+            for old in sorted(folder.glob("*.jpg"))[:-20]:
+                old.unlink(missing_ok=True)
+        except Exception:
+            self._logger.debug("autocop trace failed", exc_info=True)
+
     def _read_all_tokens(self, frame: np.ndarray) -> None:
         found: dict[str, str] = {}
         for index, name in enumerate(SERVICE_CLASSES):
@@ -465,12 +490,22 @@ class AutocopRunner:
                             # Only a button that stays dark, with no click of ours, means the class is not available.
                             dark_since = dark_since or now
                             lasting = now - dark_since > 2.5 and now - last_click > 2.5
-                            if button is not None and not button.active and lasting:
-                                self.tokens = "0"
-                                self._tell_tokens({self.selected_class: "0"})
-                            self._status(f"Жду светлую кнопку «Подтвердить» у класса «{self.selected_class}».")
-                            self._show("wait", "confirm", "Класс недоступен: нет жетона" if lasting else "Жду ответа игры",
-                                       "wait")
+                            if button is None:
+                                # the class screen is up but not all five buttons are seen: something covers the
+                                # game (another window) or the picture is unusual. Never guess which one to press.
+                                self._status(f"Не вижу все пять кнопок классов: окно игры чем-то закрыто? "
+                                             f"Жду кнопку «{self.selected_class}».")
+                                self._show("wait", "confirm", "Не вижу кнопку класса: игра закрыта окном?" if lasting
+                                           else "Жду ответа игры", "wait")
+                            else:
+                                if lasting:
+                                    self.tokens = "0"
+                                    self._tell_tokens({self.selected_class: "0"})
+                                self._status(f"Жду светлую кнопку «Подтвердить» у класса «{self.selected_class}».")
+                                self._show("wait", "confirm", "Класс недоступен: нет жетона" if lasting else "Жду ответа игры",
+                                           "wait")
+                            if lasting:
+                                self._trace(frame, button)
                         self.stop_event.wait(self.TICK)
                         continue
                     # 2) the service prompt of the counter

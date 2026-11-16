@@ -93,11 +93,53 @@ def reset_statistics_once(profiles: Path) -> None:
         pass
 
 
+def import_previous_wipe_once(profiles: Path) -> None:
+    """The wipe that ended on 16.11.2026, before the season statistics existed: state and name unknown, money, kills
+    and the term from its court sentence, time and knocks/deaths/arrests from the overlay's old counters."""
+    import glob
+    import json
+
+    from .seasons import WIPE_SECONDS, SeasonStore
+
+    marker = profiles / ".previous_wipe_v1"
+    if marker.exists():
+        return
+    knocks = deaths = arrests = 0
+    playtime = 0.0
+    for path in sorted(glob.glob(str(profiles / "archive_*" / "overlay_stats.json"))):
+        try:
+            sessions = json.loads(Path(path).read_text(encoding="utf-8")).get("sessions", {})
+        except (OSError, ValueError):
+            continue
+        for record in sessions.values():
+            knocks += int(record.get("knocks", 0) or 0)
+            deaths += int(record.get("deaths", 0) or 0)
+            arrests += int(record.get("arrests", 0) or 0)
+            playtime += float(record.get("duration_seconds", 0) or 0)
+    ended = time.mktime((2026, 11, 16, 18, 0, 0, 0, 0, -1))
+    store = SeasonStore(profiles / "seasons.json")
+    current = store.data.get("current")
+    season = {
+        "id": int(ended * 1000), "code": "EU-?????", "name": "UNKNOWN", "started_at": ended - WIPE_SECONDS,
+        "ended_at": ended, "early": False, "auto_start": False, "start_unknown": True,
+        "kills": 135, "years": 20, "playtime": playtime, "salary": 0, "shifts": 0,
+        "fixed": {"total": 6016697, "knocks": knocks, "deaths": deaths, "arrests": arrests},
+    }
+    store.data["seasons"].append(season)
+    store.data["current"] = current
+    store.save()
+    try:
+        marker.write_text("1", encoding="utf-8")
+    except OSError:
+        pass
+
+
 def main() -> None:
     project_dir = Path(__file__).resolve().parents[2]
     profile_path = project_dir / "profiles" / "default.json"
     replace_previous_instance(profile_path.parent)
     reset_statistics_once(profile_path.parent)
+    import_previous_wipe_once(profile_path.parent)
     root = tk.Tk()
     profile = Profile()
     if profile_path.exists():

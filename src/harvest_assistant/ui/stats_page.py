@@ -80,36 +80,45 @@ def button(parent: tk.Misc, text: str, command, *, primary: bool = False, bg: st
     return widget
 
 
-class Dialog(tk.Toplevel):
-    """A small window in the same look: fields, then «Сохранить»."""
+class Dialog(tk.Frame):
+    """A pop-up card inside the app window (not a window of its own): fields, then «Сохранить»."""
 
     def __init__(self, parent: tk.Misc, title: str, fields: list[tuple[str, str, str]], on_save) -> None:
-        super().__init__(parent)
-        self.title(title)
-        self.configure(bg=STRIP)
-        self.resizable(False, False)
-        self.transient(parent.winfo_toplevel())
+        host = parent.winfo_toplevel()
+        super().__init__(host, bg=STRIP, highlightthickness=2, highlightbackground=LIME)
         self._on_save = on_save
-        tk.Label(self, text=title.upper(), bg=LIME, fg=INK, font=(HEAD, 15), padx=14, pady=4).pack(anchor="w")
+        head = tk.Frame(self, bg=STRIP)
+        head.pack(fill="x")
+        tk.Label(head, text=title.upper(), bg=LIME, fg=INK, font=(HEAD, 15), padx=14, pady=4).pack(side="left")
+        close = tk.Label(head, text="✕", bg=STRIP, fg=MUTED, font=(BODY, 14), padx=10, cursor="hand2")
+        close.pack(side="right")
+        close.bind("<ButtonPress-1>", lambda _e: self.destroy())
         body = tk.Frame(self, bg=STRIP)
         body.pack(fill="both", padx=18, pady=14)
         self.vars: dict[str, tk.StringVar] = {}
+        entries = []
         for key, label, value in fields:
             small(body, label).pack(anchor="w", pady=(6, 2))
             var = tk.StringVar(value=value)
             entry = tk.Entry(body, textvariable=var, bg=PANEL, fg=TEXT, insertbackground=TEXT, relief="flat",
-                             font=(HEAD, 14), width=26, highlightthickness=1, highlightbackground=EDGE, highlightcolor=LIME)
+                             font=(HEAD, 14), width=30, highlightthickness=1, highlightbackground=EDGE, highlightcolor=LIME)
             entry.pack(fill="x", ipady=4)
+            entry.bind("<Return>", lambda _e: self._save())
+            entry.bind("<Escape>", lambda _e: self.destroy())
+            entries.append(entry)
             self.vars[key] = var
-        self.error = tk.Label(body, text="", bg=STRIP, fg=RED, font=(BODY, 10), justify="left", wraplength=280)
+        self.error = tk.Label(body, text="", bg=STRIP, fg=RED, font=(BODY, 10), justify="left", wraplength=320)
         self.error.pack(anchor="w", pady=(8, 0))
         row = tk.Frame(body, bg=STRIP)
         row.pack(fill="x", pady=(10, 0))
         button(row, "Сохранить", self._save, primary=True).pack(side="left")
         button(row, "Отмена", self.destroy).pack(side="left", padx=(8, 0))
-        self.bind("<Return>", lambda _e: self._save())
-        self.bind("<Escape>", lambda _e: self.destroy())
-        self.grab_set()
+        self.place(relx=0.5, rely=0.42, anchor="center")
+        self.lift()
+        self.grab_set()           # the rest of the app waits until it is closed
+        if entries:
+            entries[0].focus_set()
+            entries[0].icursor("end")
 
     def _save(self) -> None:
         problem = self._on_save({key: var.get().strip() for key, var in self.vars.items()})
@@ -141,6 +150,7 @@ class StatsPage(tk.Frame):
         self.viewing: int | None = None     # a past season picked in the history; None: the current one
         scroll = ScrollPage(self, max_width=980)
         scroll.pack(fill="both", expand=True)
+        self.scroll = scroll
         self.body = scroll.inner
         self.content = tk.Frame(self.body, bg=COLORS["bg"])
         self.content.pack(fill="x")
@@ -181,13 +191,17 @@ class StatsPage(tk.Frame):
         if season:
             older = [s for s in history if s["started_at"] < season["started_at"]]
             before = self._summary(older[0]) if older else None
-        signature = (json.dumps(summary, sort_keys=True, default=str), json.dumps(history, default=str), self.viewing,
-                     int(time.time() // 60))
+        # Rebuilt only when something shown changed (time in the game counts in minutes, the wipe timer in tens of
+        # minutes); the new picture is put together first and swapped in at once, so nothing blinks.
+        shown = dict(summary or {}, playtime=int((summary or {}).get("playtime", 0) // 60), left=int((summary or {}).get("left", 0) // 600),
+                     progress=round((summary or {}).get("progress", 0), 2))
+        signature = (json.dumps(shown, sort_keys=True, default=str), json.dumps(history, default=str), self.viewing)
         if signature == self._signature:
             return
         self._signature = signature
-        for child in self.content.winfo_children():
-            child.destroy()
+        old = self.content
+        scroll_top = self.scroll.canvas.yview()[0] if hasattr(self, "scroll") else 0.0
+        self.content = tk.Frame(self.body, bg=COLORS["bg"])
         root = self.content
         self._header(root, current)
         if season is None:
@@ -209,6 +223,10 @@ class StatsPage(tk.Frame):
         if history:
             self._history(root, history, season)
         tk.Frame(root, bg=COLORS["bg"], height=24).pack()
+        self.content.pack(fill="x", before=old)
+        old.destroy()
+        if hasattr(self, "scroll"):
+            self.after_idle(lambda: self.scroll.canvas.yview_moveto(scroll_top))
 
     def _header(self, root: tk.Misc, current: dict | None) -> None:
         bar = tk.Canvas(root, bg=COLORS["bg"], highlightthickness=0, height=40)
@@ -251,7 +269,8 @@ class StatsPage(tk.Frame):
             elif season.get("early"):
                 canvas.create_text(width - 18, 22, text="ВАЙП РАНЬШЕ", anchor="e", fill=AMBER, font=(HEAD, 10))
             canvas.create_text(14, 62, text=season["name"] or "—", anchor="w", fill="#ffffff", font=(HEAD, 38))
-            started = time.strftime("%d.%m · %H:%M", time.localtime(season["started_at"]))
+            started = ("хх" + time.strftime(".%m", time.localtime(season["started_at"]))) if season.get("start_unknown") \
+                else time.strftime("%d.%m · %H:%M", time.localtime(season["started_at"]))
             canvas.create_text(16, 100, text=f"СТАРТ {started}" + (" · по меню игры" if season.get("auto_start") else ""),
                                anchor="w", fill=MUTED, font=(BODY, 10))
             if is_current:
@@ -410,7 +429,8 @@ class StatsPage(tk.Frame):
         current = self.seasons.current()
         for season in history:
             summary = self._summary(season)
-            start = time.strftime("%d.%m", time.localtime(season["started_at"]))
+            start = ("хх" + time.strftime(".%m", time.localtime(season["started_at"]))) if season.get("start_unknown") \
+                else time.strftime("%d.%m", time.localtime(season["started_at"]))
             end = time.strftime("%d.%m", time.localtime(season.get("ended_at") or summary["wipe_at"]))
             name = f"{season['name']} · {start}–{end}" + (" · вайп раньше" if season.get("early") else "")
             picked = shown is not None and season["id"] == shown["id"]
