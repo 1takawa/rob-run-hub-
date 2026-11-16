@@ -7,7 +7,7 @@ import tkinter as tk
 from typing import Callable
 
 from .. import updater
-from .theme import COLORS, FONT, FONT_SEMI, PillButton
+from .theme import COLORS, FONT, PillButton
 
 
 class UpdateBox(tk.Frame):

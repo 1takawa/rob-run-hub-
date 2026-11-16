@@ -114,16 +114,6 @@ class RouteRecorder:
             self._waypoints.append(waypoint)
         return waypoint
 
-    def add_manual_turn(self, offset_seconds: float, dx: int, dy: int) -> None:
-        """Add a hand-tuned camera turn when the game hides raw mouse motion."""
-        if offset_seconds < 0:
-            raise ValueError("offset_seconds must be non-negative")
-        with self._lock:
-            self._events.append(
-                RouteEvent(elapsed_offset=float(offset_seconds), kind="mouse_delta", value=(int(dx), int(dy)))
-            )
-            self._events.sort(key=lambda event: event.elapsed_offset)
-
     def mark_laboratory(self) -> None:
         if not self._recording or not self.screen.is_target_foreground():
             raise RuntimeError("Поставь отметку лаборатории во время записи в игре.")

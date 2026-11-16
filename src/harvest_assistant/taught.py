@@ -196,34 +196,6 @@ class TaughtStore:
         shutil.rmtree(self.folder / run_id, ignore_errors=True)
 
 
-def segment_events(run: TaughtRun, index: int) -> list[RouteEvent]:
-    """The piece of the demonstration between key frame `index` and the next one.
-
-    Keys that were already held at the start are pressed first and keys still held at the end are
-    released, so a piece can be replayed on its own. Offsets are relative to the piece start.
-    """
-    start = run.keyframes[index]["t"]
-    end = run.keyframes[index + 1]["t"] if index + 1 < len(run.keyframes) else run.duration
-    held: set[str] = set()
-    for event in run.events:
-        if event.elapsed_offset >= start:
-            break
-        if event.kind == "key_down":
-            held.add(str(event.value))
-        elif event.kind == "key_up":
-            held.discard(str(event.value))
-    piece = [RouteEvent(0.0, "key_down", key) for key in sorted(held)]
-    for event in run.events:
-        if start <= event.elapsed_offset < end:
-            piece.append(RouteEvent(event.elapsed_offset - start, event.kind, event.value))
-            if event.kind == "key_down":
-                held.add(str(event.value))
-            elif event.kind == "key_up":
-                held.discard(str(event.value))
-    piece.extend(RouteEvent(end - start, "key_up", key) for key in sorted(held))
-    return piece
-
-
 class Localizer:
     """Finds the key frame that looks most like the current screen."""
 

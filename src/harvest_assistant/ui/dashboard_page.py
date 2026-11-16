@@ -8,7 +8,7 @@ from typing import Callable
 
 from PIL import Image, ImageDraw, ImageTk
 
-from ..models import AUTOMATION_MODES, MODIFIERS, Profile, RunSnapshot, RunState, TableProfile, effective_interval, remaining_seconds
+from ..models import AUTOMATION_MODES, Profile, RunSnapshot, RunState, TableProfile, effective_interval, remaining_seconds
 from ..overlay_bridge import PACKAGE_PRICES, format_money
 from ..stats import StatsStore
 from ..vision import VisionService

@@ -21,3 +21,4 @@ overlay/overlay_edit.json
 # Local leftovers
 backup_old_calibration/
 .superpowers/
+overlay/stats_reset.flag

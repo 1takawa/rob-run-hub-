@@ -155,13 +155,6 @@ class ScreenService:
         image = pyautogui.screenshot().convert("RGB")
         return np.asarray(image)
 
-    def capture_for_calibration(self, settle_seconds: float = 0.35) -> np.ndarray:
-        """Focus the game and capture it after a short settle delay."""
-        if self.background_control:
-            return self.capture(require_target_foreground=False)
-        self.focus_target(settle_seconds=settle_seconds)
-        return self.capture(require_target_foreground=True)
-
     def _matches(self, title: str) -> bool:
         return self.target_title_match in title.casefold()
 

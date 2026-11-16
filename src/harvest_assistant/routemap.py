@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import math
 from bisect import bisect_right
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -466,75 +466,3 @@ def align_by_pictures(runs: list, plans: list, width: int, fov: float):
     return align
 
 
-def render(route_map: RouteMap, size: tuple[int, int] = (900, 640), bot: tuple[float, float, float] | None = None,
-           goal: tuple[float, float] | None = None, route: list | None = None, zoom: bool = False) -> "np.ndarray":
-    """A picture of the map (RGB): the ways of every run, the doors, the tables, the bot and where it is going."""
-    from PIL import Image, ImageDraw, ImageFont
-
-    width, height = size
-    image = Image.new("RGB", size, (16, 23, 25))
-    draw = ImageDraw.Draw(image)
-    try:
-        font = ImageFont.truetype("segoeui.ttf", 15)
-        small = ImageFont.truetype("segoeui.ttf", 12)
-    except OSError:
-        font = small = ImageFont.load_default()
-    if not route_map.nodes:
-        return np.asarray(image)
-    bounds = route_map.plantation_bounds() if zoom else None
-    if bounds is not None:
-        xs, ys = [bounds[0], bounds[2]], [bounds[1], bounds[3]]
-    else:
-        xs = [n.x for n in route_map.nodes]
-        ys = [n.y for n in route_map.nodes]
-    pad = 50
-    scale = min((width - 2 * pad) / max(1e-6, max(xs) - min(xs)), (height - 2 * pad) / max(1e-6, max(ys) - min(ys)))
-
-    def to_px(x: float, y: float) -> tuple[float, float]:
-        return pad + (x - min(xs)) * scale, height - pad - (y - min(ys)) * scale  # north up
-
-    colours = [(96, 112, 107), (121, 207, 255), (176, 108, 240), (241, 198, 109), (199, 243, 106)]
-    for r, ids in enumerate(route_map._by_run):
-        plan = route_map.plans[r]
-        if bounds is not None:  # zoomed: only what lies past the last door, as separate pieces
-            pieces: list[list] = [[]]
-            for i in ids:
-                node = route_map.nodes[i]
-                if plan.stage_of[node.index] >= plan.stages:
-                    pieces[-1].append(to_px(node.x, node.y))
-                elif pieces[-1]:
-                    pieces.append([])
-        else:
-            pieces = [[to_px(route_map.nodes[i].x, route_map.nodes[i].y) for i in ids]]
-        for points in pieces:
-            if len(points) > 1:
-                draw.line(points, fill=colours[r % len(colours)], width=2)
-    for k, (x, y) in enumerate(route_map.doors()):
-        px, py = to_px(x, y)
-        draw.rectangle((px - 6, py - 6, px + 6, py + 6), outline=(121, 207, 255), width=2)
-        draw.text((px + 9, py - 9), f"дверь {k // 2 + 1}{'а' if k % 2 == 0 else 'б'}", fill=(121, 207, 255), font=small)
-    for k, (x, y) in enumerate(route_map.tables()):
-        px, py = to_px(x, y)
-        draw.ellipse((px - 7, py - 7, px + 7, py + 7), outline=(241, 198, 109), width=3)
-        draw.text((px + 10, py - 9), f"стол {k + 1}", fill=(241, 198, 109), font=font)
-    if route:
-        draw.line([to_px(x, y) for x, y in route], fill=(255, 255, 255), width=3)
-    if goal is not None:
-        px, py = to_px(*goal)
-        draw.line((px - 9, py, px + 9, py), fill=(199, 243, 106), width=3)
-        draw.line((px, py - 9, px, py + 9), fill=(199, 243, 106), width=3)
-    if bot is not None:
-        px, py = to_px(bot[0], bot[1])
-        a = math.radians(bot[2])
-        tip = (px + 14 * math.sin(a), py - 14 * math.cos(a))
-        left = (px + 8 * math.sin(a + 2.5), py - 8 * math.cos(a + 2.5))
-        right = (px + 8 * math.sin(a - 2.5), py - 8 * math.cos(a - 2.5))
-        draw.polygon([tip, left, right], fill=(199, 243, 106))
-    if bounds is not None:  # a grid of one unit (one second of walking) so that distances can be judged
-        for gx in range(math.ceil(bounds[0]), int(bounds[2]) + 1):
-            draw.line([to_px(gx, bounds[1]), to_px(gx, bounds[3])], fill=(32, 42, 44), width=1)
-        for gy in range(math.ceil(bounds[1]), int(bounds[3]) + 1):
-            draw.line([to_px(bounds[0], gy), to_px(bounds[2], gy)], fill=(32, 42, 44), width=1)
-    draw.text((14, 10), ("Плантация (приближено) · клетка = 1 секунда ходьбы" if bounds else
-                         "Карта по пройденным маршрутам · 1 деление = 1 секунда ходьбы"), fill=(147, 160, 153), font=font)
-    return np.asarray(image)

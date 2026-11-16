@@ -7,7 +7,6 @@ set), its cost in tokens as last read on the loadout screen, and the chosen one 
 
 from __future__ import annotations
 
-import time
 import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path

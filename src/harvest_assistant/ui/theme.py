@@ -6,7 +6,6 @@ for the one thing that matters, controls that answer instantly on press.
 
 from __future__ import annotations
 
-import math
 import tkinter as tk
 from tkinter import ttk
 from typing import Callable
@@ -43,21 +42,6 @@ def blend(color_a: str, color_b: str, amount: float) -> str:
     a = [int(color_a[i:i + 2], 16) for i in (1, 3, 5)]
     b = [int(color_b[i:i + 2], 16) for i in (1, 3, 5)]
     return "#" + "".join(f"{round(x + (y - x) * amount):02x}" for x, y in zip(a, b))
-
-
-def rounded_points(width: float, height: float, radius: float, steps: int = 14) -> list[float]:
-    radius = max(0.0, min(radius, width / 2, height / 2))
-    points: list[float] = []
-    for cx, cy, start in (
-        (width - radius, radius, -90),
-        (width - radius, height - radius, 0),
-        (radius, height - radius, 90),
-        (radius, radius, 180),
-    ):
-        for step in range(steps + 1):
-            angle = math.radians(start + 90 * step / steps)
-            points.extend((cx + radius * math.cos(angle), cy + radius * math.sin(angle)))
-    return points
 
 
 _image_cache: dict[tuple, ImageTk.PhotoImage] = {}

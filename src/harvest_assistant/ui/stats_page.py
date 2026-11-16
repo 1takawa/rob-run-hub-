@@ -11,7 +11,7 @@ from pathlib import Path
 
 from ..overlay_bridge import OVERLAY_DIR, format_money
 from ..seasons import SeasonStore
-from ..stats import KINDS, StatsStore
+from ..stats import StatsStore
 from .theme import COLORS, ScrollPage
 
 LIME, INK, STRIP, EDGE, PANEL = "#c6fb33", "#141414", "#1b1b1a", "#2c2c2a", "#0f0f0e"

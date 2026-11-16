@@ -9,7 +9,7 @@ import tkinter as tk
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from queue import Empty, SimpleQueue
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox
 from typing import Callable
 
 from pynput import keyboard
@@ -22,7 +22,6 @@ from .reconnect import Reconnector, describe_screen
 from .table_vision import TableMemory, TableVision, TableWatcher
 from .approach import ApproachRecorder
 from .taught import TaughtStore
-from .calibration_status import missing_table_calibration, table_calibration_ready
 from .input_driver import InputDriver
 from .autocop import AutocopRunner
 from .laboratory import laboratory_errors, marker_available, parse_steps
@@ -391,13 +390,6 @@ class HarvestAssistantApp:
                 messagebox.showerror("Не удалось выбрать окно", str(exc), parent=self.root)
         if self.wizard is not None:
             self.wizard.set_services(self.screen, self.recorder)
-
-    def _bind_current_window_help(self) -> None:
-        messagebox.showinfo(
-            "Привязка окна",
-            "Нажми Ctrl+F10, пока игровое окно активно. Программа сохранит его заголовок.",
-            parent=self.root,
-        )
 
     def _set_background_control(self, enabled: bool) -> None:
         if self.autocop_runner is not None and self.autocop_runner.worker_alive:
@@ -1543,7 +1535,7 @@ class HarvestAssistantApp:
             try:
                 frame = self.screen.capture()
             except Exception as exc:
-                self._post_to_ui(lambda: self.wizard.show_loot([], None, f"игра не в фокусе ({exc})"))
+                self._post_to_ui(lambda error=exc: self.wizard.show_loot([], None, f"игра не в фокусе ({error})"))
                 return
             items = self.loot_reader.read(frame)
             crop, error = self.loot_reader.last_crop, self.loot_reader.error
@@ -1663,13 +1655,6 @@ class HarvestAssistantApp:
             start_table_timer(table, self.profile, minutes * 60, time.time())
         self._save_profile(force=True)
         self._refresh_rows()
-
-    def _calibrate_selected(self) -> None:
-        self._show_page("settings")
-
-    def _open_wizard(self) -> bool:
-        self._show_page("settings")
-        return True
 
     def _prepare_calibration_edit(self) -> bool:
         if self._route_recording:

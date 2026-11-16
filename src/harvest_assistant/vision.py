@@ -61,12 +61,6 @@ class VisionService:
         Image.fromarray(crop.astype(np.uint8)).save(path)
         return path
 
-    def load_template(self, template_name: str) -> np.ndarray:
-        image = cv2.imread(str(self._template_path(template_name)), cv2.IMREAD_GRAYSCALE)
-        if image is None:
-            raise FileNotFoundError(self._template_path(template_name))
-        return image
-
     def has_template(self, template_name: str) -> bool:
         return self._template_path(template_name).is_file()
 

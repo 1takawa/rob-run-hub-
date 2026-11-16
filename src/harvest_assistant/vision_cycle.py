@@ -625,7 +625,6 @@ class VisionCycleRunner(VisualRouteTestRunner):
             left = self._remaining(table) if table is not None else None
             if left is not None and left > 0:
                 states[slot] = "growing"
-        seen_from: dict[int, float] = {slot: 0.0 for slot in states}   # known without looking: not looked at again yet
         logger.info("map tour: %d tables%s", len(slots), "" if not states else ", not gone to: " + ", ".join(
             f"{k + 1} ({'пустой' if states[k] == 'idle' else 'идёт таймер'})" for k in sorted(states)))
 

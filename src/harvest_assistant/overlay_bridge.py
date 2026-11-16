@@ -200,30 +200,6 @@ def stop_overlay() -> bool:
     return True
 
 
-def block_layout(settings: dict) -> list[tuple[str, int, int]]:
-    """Enabled overlay blocks as (name, width, height) in the overlay's base pixels.
-
-    Mirrors the overlay's own layout rules: switched-off elements do not exist, so a block
-    shrinks to what is left and blocks stack in one column without overlapping.
-    """
-    blocks = settings["blocks"]
-    result: list[tuple[str, int, int]] = []
-    stats = blocks["stats"]
-    if stats["enabled"]:
-        height = 56 + 2
-        if any(stats[key] for key in ("kills", "knocks", "deaths", "arrests")):
-            height += 62
-        height += 28 * bool(stats["playtime"]) + 58 * bool(stats["lifetime"]) + 30 * bool(stats["history"])
-        result.append(("stats", 294, height))
-    plantation = blocks["plantation"]
-    counters = sum(1 for key in ("yellow", "purple", "green") if plantation[key])
-    if plantation["enabled"] and (plantation["timer"] or counters):
-        result.append(("plantation", 294, 86))
-    if blocks["laboratory"]["enabled"]:
-        result.append(("laboratory", 294, 66))
-    return result
-
-
 def set_edit_mode(active: bool) -> None:
     """While True (refreshed every second) the overlay stays visible in the game for live setup."""
     if not OVERLAY_DIR.is_dir():
@@ -244,10 +220,6 @@ def write_vision(payload: dict) -> None:
     """What the autopilot sees right now; the overlay draws it over the game (see overlay/main.py)."""
     if OVERLAY_DIR.is_dir():
         _atomic_write(VISION_PATH, payload)
-
-
-def clear_vision() -> None:
-    write_vision({"active": False, "ts": time.time()})
 
 
 AUTOCOP_PATH = OVERLAY_DIR / "autocop_feed.json"

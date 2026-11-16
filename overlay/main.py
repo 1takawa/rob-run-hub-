@@ -754,14 +754,6 @@ class OverlayApp:
             self.session_key, self.session = self.store.get_or_create(self.window)
             self._stats_dirty = True
 
-    def _farm_y_below_card(self, screen_height: int, scale: float, main_y_percent: int) -> int:
-        main_height = int(round(self.BASE_HEIGHT * scale))
-        farm_height = int(round(self.FARM_HEIGHT * scale))
-        main_y = round(max(0, screen_height - main_height) * main_y_percent / 100)
-        farm_y = main_y + main_height + round(12 * scale)
-        farm_usable_height = max(1, screen_height - farm_height)
-        return min(100, max(0, round(farm_y * 100 / farm_usable_height)))
-
     @staticmethod
     def _create_tray_image() -> Image.Image:
         image = Image.new("RGBA", (64, 64), "#101719")
@@ -862,21 +854,6 @@ class OverlayApp:
         if blocks["laboratory"]["enabled"]:
             specs.append(("laboratory", self.lab_window, self.LAB_WIDTH, self.LAB_HEIGHT))
         return specs
-
-    @staticmethod
-    def _rounded_points(width: int, height: int, radius: int) -> list[float]:
-        points: list[float] = []
-        arcs = (
-            (width - radius, radius, -90, 0),
-            (width - radius, height - radius, 0, 90),
-            (radius, height - radius, 90, 180),
-            (radius, radius, 180, 270),
-        )
-        for center_x, center_y, start_angle, end_angle in arcs:
-            for step in range(9):
-                angle = math.radians(start_angle + (end_angle - start_angle) * step / 8)
-                points.extend((center_x + radius * math.cos(angle), center_y + radius * math.sin(angle)))
-        return points
 
     LAB_WIDTH = 294
 

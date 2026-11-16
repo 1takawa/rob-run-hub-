@@ -9,8 +9,6 @@ from __future__ import annotations
 import json
 import threading
 import time
-from collections import defaultdict
-from datetime import datetime
 from pathlib import Path
 
 KINDS = ("yellow", "purple", "green")
@@ -130,34 +128,7 @@ class StatsStore:
     def wipe_start(self) -> float | None:
         return self.data.get("wipe_start")
 
-    def set_wipe_start(self, timestamp: float | None) -> None:
-        with self._lock:
-            self.data["wipe_start"] = timestamp
-            self._save()
-
-    @property
-    def wipe_end(self) -> float | None:
-        start = self.wipe_start
-        return None if start is None else start + WIPE_DAYS * 86400
-
-    @staticmethod
-    def parse_date(text: str) -> float | None:
-        text = text.strip()
-        for fmt in ("%d.%m.%Y %H:%M", "%d.%m.%Y"):
-            try:
-                return datetime.strptime(text, fmt).timestamp()
-            except ValueError:
-                continue
-        return None
-
     # ---- queries ------------------------------------------------------------------------
-
-    def last_session_id(self) -> int | None:
-        with self._lock:
-            session = self.session
-            if session["id"] is not None:
-                return session["id"]
-            return self.data["sessions"][-1]["id"] if self.data["sessions"] else None
 
     def summary(self, since: float | None = None, session_id: int | None = None) -> dict:
         """Totals for events at/after `since`, or for one session."""
@@ -176,18 +147,3 @@ class StatsStore:
                     loot[event["kind"]] += int(event["n"])
             return {"cycles": cycles, "loot": loot, "money": money(loot), "reconnects": reconnects}
 
-    def by_day(self, since: float | None = None, session_id: int | None = None) -> list[dict]:
-        with self._lock:
-            days: dict[str, dict] = defaultdict(lambda: {"cycles": 0, "loot": _empty_loot()})
-            for event in self.data["events"]:
-                if session_id is not None and event.get("s") != session_id:
-                    continue
-                if since is not None and event["t"] < since:
-                    continue
-                day = time.strftime("%Y-%m-%d", time.localtime(event["t"]))
-                if event["k"] == "cycle":
-                    days[day]["cycles"] += 1
-                elif event.get("kind") in KINDS:
-                    days[day]["loot"][event["kind"]] += int(event["n"])
-            return [{"day": day, "cycles": row["cycles"], "loot": row["loot"], "money": money(row["loot"])}
-                    for day, row in sorted(days.items(), reverse=True)]

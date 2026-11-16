@@ -528,24 +528,6 @@ class VisualRouteTestRunner(MapPilot):
             self.driver.move_relative(38, 0)
         raise VisualRouteError(f"Не вижу подсказку двери {expected}; остановился.")
 
-    def screen_to_mouse(self, screen_px: float, frame_width: int) -> int:
-        """Mouse pixels that turn the camera by about `screen_px` pixels of picture movement."""
-        focal = (frame_width / 2) / math.tan(math.radians(self.HORIZONTAL_FOV / 2))
-        return int(round(screen_px * self.px_per_degree / (focal * math.pi / 180)))
-
-    def _replay(self, events: list) -> None:
-        started = time.monotonic()
-        lag = 0.0
-        for event in events:
-            while time.monotonic() < started + event.elapsed_offset + lag:
-                self.driver.wait(min(0.05, max(0.0, started + event.elapsed_offset + lag - time.monotonic())))
-            if event.kind == "interact":
-                t0 = time.monotonic()
-                self._recorded_interact(str(event.value or ""))
-                lag += time.monotonic() - t0
-            else:
-                self.driver.play_route_event(event)
-
     ALIGN_YAW = 3.0     # degrees of heading error that are worth correcting
     ALIGN_PITCH = 5.0
     TURN_GAIN = 0.85    # under-shoot a little: the next look corrects the rest

@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import copy
-import time
 import tkinter as tk
 from tkinter import ttk
 from typing import Callable
 
 from .. import overlay_bridge as bridge
 from ..models import Profile
-from .theme import (COLORS, FONT, FONT_SEMI, Card, ChipToggle, PillButton, ScrollPage, Slider, Toggle, caption,
-                    divider, label, page_header, rounded_points)
+from .theme import COLORS, FONT_SEMI, Card, ChipToggle, PillButton, ScrollPage, Slider, Toggle, label, page_header
 
 # name -> (title, description, [(element key, chip text, dot colour)])
 BLOCKS = {

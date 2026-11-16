@@ -11,7 +11,7 @@ from typing import Callable
 import numpy as np
 from PIL import Image, ImageTk
 
-from ..loot import LootItem, split_key
+from ..loot import LootItem
 from ..models import InteractionCalibration, Profile
 from .theme import (COLORS, FONT_SEMI, Card, HelpTip, PillButton, ScrollPage, Segmented, Toggle, divider, label, page_header,
                     settings_row)
