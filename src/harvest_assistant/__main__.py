@@ -14,7 +14,6 @@ from pathlib import Path
 from .app import HarvestAssistantApp
 from .models import Profile
 from .persistence import load_profile, save_profile
-from .runner import RouteRunner
 
 
 def _python_process_alive(pid: int) -> bool:
@@ -153,7 +152,9 @@ def main() -> None:
             except OSError:
                 pass
         save_profile(profile, profile_path)
-    HarvestAssistantApp(root, profile, profile_path, runner_factory=RouteRunner)
+    profile.automation_mode = "plantation"   # the laboratory is not ready; by sight only
+    profile.vision_harvest = True
+    HarvestAssistantApp(root, profile, profile_path)
     root.mainloop()
 
 

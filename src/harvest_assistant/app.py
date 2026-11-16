@@ -17,14 +17,13 @@ from pynput import keyboard
 from . import overlay_bridge
 from .loot import LootItem, LootReader, summarize
 from .stats import StatsStore
-from . import routes as route_store
 from .reconnect import Reconnector, describe_screen
 from .table_vision import TableMemory, TableVision, TableWatcher
 from .approach import ApproachRecorder
 from .taught import TaughtStore
 from .input_driver import InputDriver
 from .autocop import AutocopRunner
-from .laboratory import laboratory_errors, marker_available, parse_steps
+from .laboratory import parse_steps
 from .models import (
     AUTOMATION_MODES,
     DEFAULT_INTERVAL_SECONDS,
@@ -32,7 +31,6 @@ from .models import (
     Profile,
     RunSnapshot,
     RunState,
-    RecordedRoute,
     ScreenMarker,
     TableProfile,
     TableStatus,
@@ -43,8 +41,6 @@ from .models import (
     start_table_timer,
 )
 from .persistence import save_profile
-from .route_recorder import RouteRecorder
-from .runner import RouteRunner
 from .screen import ScreenService
 from .vision import VisionService
 from .vision_cycle import VisionCycleRunner
@@ -65,14 +61,12 @@ class HarvestAssistantApp:
         root: tk.Tk,
         profile: Profile,
         profile_path: Path,
-        runner_factory: Callable[..., RouteRunner] = RouteRunner,
     ) -> None:
         self.root = root
         self.profile = profile
         self.profile_path = profile_path
         self.logger = self._configure_logging(profile_path)
         self.template_dir = profile_path.parent / "templates"
-        self.runner_factory = runner_factory
         self.profile_lock = threading.RLock()
         self.screen: ScreenService | None = None
         self.vision = VisionService(self.template_dir)
@@ -92,15 +86,12 @@ class HarvestAssistantApp:
                     table.interval_seconds = DEFAULT_INTERVAL_SECONDS
             self.profile.interval_migrated = True
             save_profile(self.profile, profile_path)
-        self.recorder: RouteRecorder | None = None
         self.wizard = None
         self.route_page = None
-        self.runner: RouteRunner | VisualRouteTestRunner | None = None
+        self.runner: VisualRouteTestRunner | None = None
         self.autocop_runner: AutocopRunner | None = None
         self._hotkey_listener: keyboard.GlobalHotKeys | None = None
         self._autocop_bind_listener: keyboard.Listener | None = None
-        self._route_recording = False
-        self._recording_waiting = False
         self._last_saved = 0.0
         self._last_snapshot = RunSnapshot(state=RunState.STOPPED, reason="Автосбор остановлен.")
         self._selected_table_id: str | None = None
@@ -268,26 +259,15 @@ class HarvestAssistantApp:
                 "timer_pause": self._toggle_timer_pause,
                 "apply_settings": self._apply_settings,
                 "set_base_interval": self._set_base_interval,
-                "save_route": self._save_current_route,
-                "list_routes": lambda: route_store.list_routes(self.routes_dir),
-                "load_route": self._load_saved_route,
-                "delete_route": self._delete_saved_route,
                 "toggle_reconnect": lambda: self._set_reconnect(self.settings_page.reconnect_var.get()),
                 "toggle_table_vision": lambda: self._set_table_vision(self.settings_page.table_vision_var.get()),
-                "toggle_vision_harvest": lambda: self._set_vision_harvest(self.settings_page.vision_harvest_var.get()),
-                "toggle_background_control": lambda: self._set_background_control(self.settings_page.background_control_var.get()),
                 "scan_reconnect": self._scan_reconnect_screen,
                 "toggle_auto": lambda: self._set_auto(self.settings_page.auto_var.get()),
-                "toggle_recording": self._toggle_route_recording_from_ui,
-                "record_waiting": lambda: self._toggle_route_recording_from_ui(waiting=True),
-                "clear_waiting": self._clear_waiting_route,
-                "start_marker": lambda: self._choose_marker("start"),
                 "visual_test": self._start_visual_test,
                 "approach_record": self._toggle_approach_recording,
                 "taught_list": lambda: self.taught_store.load_runs(),
                 "taught_delete": self._delete_taught_run,
                 "visual_stop": self._stop_automation,
-                "mark_waypoint": self._mark_next_waypoint_from_ui,
                 "read_loot": self._read_loot_now,
                 "before_edit": self._prepare_calibration_edit,
                 "profile_changed": self._on_calibration_profile_changed,
@@ -352,9 +332,6 @@ class HarvestAssistantApp:
             return
         if not self._stop_runner_for_profile_edit():
             return
-        if self._route_recording and self.recorder is not None:
-            self.recorder.cancel()
-            self._route_recording = False
         try:
             screen = ScreenService(title, background_control=self.profile.background_control)
         except (OSError, ValueError) as exc:
@@ -362,13 +339,10 @@ class HarvestAssistantApp:
             return
         self.profile.target_window_title_match = title
         self.screen = screen
-        self.recorder = RouteRecorder(screen, self.vision, self.profile)
-        if self.wizard is not None:
-            self.wizard.set_services(self.screen, self.recorder)
         self.window_status_var.set("Найдено" if screen.is_target_open() else "Открой игру и проверь заголовок")
         self.game_connection_var.set("Игра найдена" if screen.is_target_open() else "Открой игру")
         self._save_profile(force=True)
-        self._last_snapshot.reason = "Игровое окно настроено. Запиши маршрут клавишей F5."
+        self._last_snapshot.reason = "Игровое окно настроено."
         self._set_status(self._last_snapshot.reason)
         self._restart_hotkeys()
 
@@ -378,55 +352,14 @@ class HarvestAssistantApp:
             return
         try:
             self.screen = ScreenService(title, background_control=self.profile.background_control)
-            self.recorder = RouteRecorder(self.screen, self.vision, self.profile)
             self.window_status_var.set("Найдено" if self.screen.is_target_open() else "Открой игру")
             self.game_connection_var.set("Игра найдена" if self.screen.is_target_open() else "Открой игру")
         except (OSError, ValueError) as exc:
             self.screen = None
-            self.recorder = None
             self.window_status_var.set("Ошибка настройки")
             self.game_connection_var.set("Ошибка окна")
             if show_message:
                 messagebox.showerror("Не удалось выбрать окно", str(exc), parent=self.root)
-        if self.wizard is not None:
-            self.wizard.set_services(self.screen, self.recorder)
-
-    def _set_background_control(self, enabled: bool) -> None:
-        if self.autocop_runner is not None and self.autocop_runner.worker_alive:
-            self.settings_page.background_control_var.set(self.profile.background_control)
-            self._set_status("Останови автокоп перед сменой режима управления.")
-            return
-        if self.runner is not None and self.runner.worker_alive:
-            self.settings_page.background_control_var.set(self.profile.background_control)
-            self._set_status("Останови маршрут перед сменой режима управления.")
-            return
-        if self._route_recording or getattr(getattr(self, "approach_recorder", None), "recording", False):
-            self.settings_page.background_control_var.set(self.profile.background_control)
-            self._set_status("Заверши запись маршрута перед сменой режима управления.")
-            return
-
-        title = self.profile.target_window_title_match.strip()
-        screen = self.screen
-        if title:
-            try:
-                screen = ScreenService(title, background_control=enabled)
-            except (OSError, ValueError) as exc:
-                self.settings_page.background_control_var.set(self.profile.background_control)
-                self._set_status(f"Не удалось включить режим: {exc}")
-                return
-
-        with self.profile_lock:
-            self.profile.background_control = bool(enabled)
-        self.screen = screen
-        if screen is not None:
-            self.recorder = RouteRecorder(screen, self.vision, self.profile)
-            if self.wizard is not None:
-                self.wizard.set_services(screen, self.recorder)
-        self._save_profile(force=True)
-        if enabled:
-            self._set_status("Фоновое управление включено. Держи игровое окно открытым и не перекрывай его на втором мониторе.")
-        else:
-            self._set_status("Обычный режим включён: для управления игра должна быть активным окном.")
 
     def _capture_active_window_title(self) -> None:
         _handle, title = ScreenService.active_window_details()
@@ -446,7 +379,6 @@ class HarvestAssistantApp:
             except Exception:
                 pass
         bindings = {
-            self._pynput_hotkey(self.profile.record_route_hotkey): self._hotkey_route,
             self._pynput_hotkey(self.profile.mark_waypoint_hotkey): self._hotkey_mark_waypoint,
             self._pynput_hotkey(self.profile.pause_hotkey): self._hotkey_pause,
             self._pynput_hotkey(self.profile.stop_hotkey): self._hotkey_stop,
@@ -456,7 +388,6 @@ class HarvestAssistantApp:
             self._pynput_hotkey(self.profile.approach_hotkey): self._hotkey_approach,
             self._pynput_hotkey(self.profile.autocop_hotkey): self._hotkey_autocop,
             "<ctrl>+<f10>": self._capture_active_window_title,
-            "<ctrl>+<f3>": lambda: self._post_to_ui(self._mark_laboratory),
         }
         try:
             self._hotkey_listener = keyboard.GlobalHotKeys(bindings)
@@ -478,19 +409,15 @@ class HarvestAssistantApp:
 
     def _update_hotkey_help(self) -> None:
         self.hotkey_help_var.set(
-            f"{self.profile.record_route_hotkey.upper()} — запись · "
-            f"{self.profile.mark_waypoint_hotkey.upper()} — отметить · "
+            f"{self.profile.mark_waypoint_hotkey.upper()} — отметить стол при записи · "
             f"{self.profile.pause_hotkey.upper()} — старт/пауза · {self.profile.stop_hotkey.upper()} — стоп · "
             f"{self.profile.auto_hotkey.upper()} — авто · {self.profile.approach_hotkey.upper()} — запись пути · {self.profile.visual_hotkey.upper()} — путь до столов · {self.profile.loot_hotkey.upper()} — пакеты"
         )
         if getattr(self, "settings_page", None) is not None:
             self.settings_page.update_hotkey_help(self.profile)
 
-    def _hotkey_route(self) -> None:
-        self._post_to_ui(self._toggle_route_recording)
-
     def _hotkey_mark_waypoint(self) -> None:
-        self._post_to_ui(self._mark_next_waypoint)
+        self._post_to_ui(self._mark_table)
 
     def _hotkey_pause(self) -> None:
         self._post_to_ui(self._toggle_runner_pause)
@@ -512,82 +439,6 @@ class HarvestAssistantApp:
         with self.profile_lock:
             overlay_bridge.write_feed(self.profile, running=state not in ("stopped", "error"), state=state,
                                       counts=self.stats.session_counts())
-
-    def _archive_route(self, reason: str, label: str = "") -> bool:
-        """Keep a copy of the current route in profiles/routes. False if there was nothing to keep."""
-        try:
-            return route_store.archive_route(self.profile.route, self.profile, self.routes_dir, reason, label) is not None
-        except OSError:
-            self.logger.exception("Could not archive the route")
-            return False
-
-    def _save_current_route(self) -> None:
-        if not self.profile.route.waypoints and self.profile.route.lab_offset is None:
-            self._set_status("Маршрута ещё нет: сначала запиши его.")
-            return
-        if self._archive_route("сохранён вручную"):
-            self.settings_page.render_saved()
-            self._set_status("Маршрут сохранён.")
-
-    def _load_saved_route(self, path) -> None:
-        if self._route_recording:
-            self._set_status("Сначала заверши запись маршрута.")
-            return
-        try:
-            route, meta = route_store.load_route(path)
-        except (OSError, ValueError, KeyError):
-            messagebox.showerror("Не удалось открыть маршрут", "Файл маршрута повреждён или недоступен.", parent=self.root)
-            return
-        current = self.profile.route
-        if (current.waypoints or current.lab_offset is not None) and not messagebox.askyesno(
-            "Заменить маршрут?",
-            f"Текущий маршрут ({len(current.waypoints)} стол., {current.duration_seconds:.0f} с) будет заменён маршрутом "
-            f"«{meta['label']}».\n\nТекущий сохранится в списке.",
-            parent=self.root,
-        ):
-            return
-        existing = {table.table_id for table in self.profile.tables}
-        missing = [waypoint.table_id for waypoint in route.waypoints if waypoint.table_id not in existing]
-        add_missing = False
-        if missing:
-            names = ", ".join(meta["tables"].get(table_id, table_id) for table_id in missing)
-            answer = messagebox.askyesnocancel(
-                "Столов из маршрута нет в списке",
-                f"Маршрут записан и для: {names}.\n\n"
-                "Да — добавить эти столы.\n"
-                "Нет — загрузить маршрут без них (их точки будут убраны).\n"
-                "Отмена — ничего не менять.",
-                parent=self.root,
-            )
-            if answer is None:
-                return
-            add_missing = bool(answer)
-            if not add_missing:
-                route.waypoints = [w for w in route.waypoints if w.table_id in existing]
-        if not self._stop_runner_for_profile_edit():
-            return
-        self._archive_route("заменён загруженным")
-        base = self.profile.tables[0].interval_seconds if self.profile.tables else DEFAULT_INTERVAL_SECONDS
-        with self.profile_lock:
-            for table_id in (missing if add_missing else []):
-                self.profile.tables.append(TableProfile(
-                    table_id=table_id, name=meta["tables"].get(table_id, table_id),
-                    route_index=len(self.profile.tables), interval_seconds=base,
-                ))
-            self.profile.route = route
-            for index, waypoint in enumerate(route.waypoints):
-                self._table_by_id(waypoint.table_id).route_index = index
-        self._save_profile(force=True)
-        self.settings_page.render_saved()
-        self._refresh_rows()
-        suffix = f" Добавлено столов: {len(missing)}." if missing and add_missing else ""
-        self._set_status(f"Загружен маршрут «{meta['label']}».{suffix}")
-
-    def _delete_saved_route(self, path) -> None:
-        if not messagebox.askyesno("Удалить сохранённый маршрут?", "Файл маршрута будет удалён без возможности восстановления.", parent=self.root):
-            return
-        route_store.delete_route(path)
-        self.settings_page.render_saved()
 
     def _set_base_interval(self, seconds: int) -> None:
         """Growth time without upgrades, for every table. Timers that are already running keep their value."""
@@ -637,12 +488,6 @@ class HarvestAssistantApp:
                 self.logger.info("No badge in view while harvesting %s: look not remembered", table.name)
         except Exception:
             self.logger.exception("Could not remember the look of %s", table.name)
-
-    def _set_vision_harvest(self, enabled: bool) -> None:
-        with self.profile_lock:
-            self.profile.vision_harvest = bool(enabled)
-        self._save_profile(force=True)
-        self._set_status("Сбор по зрению включён." if enabled else "Включён старый режим: повтор записанного маршрута.")
 
     def _set_table_vision(self, enabled: bool) -> None:
         with self.profile_lock:
@@ -746,159 +591,20 @@ class HarvestAssistantApp:
     def _hotkey_stop(self) -> None:
         self._post_to_ui(self._emergency_stop)
 
-    def _toggle_route_recording_from_ui(self, waiting: bool = False) -> None:
-        route = self.profile.route
-        if self._route_recording and waiting != self._recording_waiting:
-            self._set_status("Сначала заверши текущую запись клавишей записи маршрута.")
-            return
-        if not self._route_recording and not waiting and (route.waypoints or route.lab_offset is not None):
-            if not messagebox.askyesno(
-                "Записать маршрут заново?",
-                f"Уже записан маршрут: {len(route.waypoints)} стол., {route.duration_seconds:.0f} с.\n\n"
-                "Новая запись заменит его. Старый сохранится в списке сохранённых маршрутов.",
-                parent=self.root,
-            ):
-                return
-        if self.screen is None:
-            self._set_status("Сначала привяжи игровое окно.")
-            return
-        try:
-            self.screen.focus_target()
-        except Exception as exc:
-            self._set_status(f"Не удалось переключиться в игру: {exc}")
-            return
-        self._toggle_route_recording(waiting)
-
-    def _mark_next_waypoint_from_ui(self) -> None:
-        if self.screen is None:
-            self._set_status("Сначала привяжи игровое окно.")
-            return
-        try:
-            self.screen.focus_target()
-        except Exception as exc:
-            self._set_status(f"Не удалось переключиться в игру: {exc}")
-            return
-        self._mark_next_waypoint()
-
-    def _toggle_route_recording(self, waiting: bool = False) -> None:
-        if self.recorder is None:
-            self._set_status("Сначала привяжи игровое окно.")
-            return
-        if not self._route_recording:
-            if not self._stop_runner_for_profile_edit():
-                return
-            try:
-                marker = self.profile.start_marker
-                self.recorder.start(marker if marker_available(marker, self.vision) else None)
-            except Exception as exc:
-                self._set_status(str(exc))
-                return
-            self._route_recording = True
-            self._recording_waiting = waiting
-            self._set_status(
-                "Записываю ожидание. Сделай круг и вернись на общий старт." if waiting else
-                f"Записываю основной маршрут. {self.profile.mark_waypoint_hotkey.upper()} — стол, "
-                "Ctrl+F3 — лаборатория. Заверши запись на старте."
-            )
-            return
-
-        self._route_recording = False
-        try:
-            route = self.recorder.finish()
-        except Exception as exc:
-            self.recorder.cancel()
-            self._set_status(str(exc))
-            return
-        if self._recording_waiting:
-            self._recording_waiting = False
-            if not route.events or route.duration_seconds <= 0:
-                self._set_status("Ожидание не сохранено: в записи нет движения.")
-                return
-            if marker_available(self.profile.start_marker, self.vision):
-                try:
-                    self._verify_recorded_start_and_end(route)
-                except (RuntimeError, ValueError, OSError) as exc:
-                    self._set_status(f"Ожидание не сохранено: {exc}")
-                    return
-            with self.profile_lock:
-                self.profile.waiting_route = route
-            self._save_profile(force=True)
-            self._refresh_rows()
-            self._set_status(f"Маршрут ожидания записан: {route.duration_seconds:.1f} с.")
-            return
-        current_table_ids = {table.table_id for table in self.profile.tables}
-        stale_ids = {waypoint.table_id for waypoint in route.waypoints} - current_table_ids
-        if stale_ids:
-            self._set_status(
-                "Запись не сохранена: маршрут содержит удалённые столы "
-                f"{', '.join(sorted(stale_ids))}. Запиши его заново."
-            )
-            return
-        if not route.waypoints and route.lab_offset is None:
-            self._set_status("Маршрут не сохранён: отметь хотя бы стол или лабораторию.")
-            return
-        if marker_available(self.profile.start_marker, self.vision):
-            try:
-                self._verify_recorded_start_and_end(route)
-            except (RuntimeError, ValueError, OSError) as exc:
-                self._set_status(f"Основной маршрут не сохранён: {exc}")
-                return
-        self._archive_route("заменён новой записью")
-        with self.profile_lock:
-            self.profile.route = route
-            for index, waypoint in enumerate(route.waypoints):
-                table = self._table_by_id(waypoint.table_id)
-                table.route_index = index
-        self._save_profile(force=True)
-        mouse_note = "" if self.recorder.mouse_trace_usable else " Камера записана неуверенно: проверь повороты и при необходимости добавь ручные в мастере."
-        lab_note = " Лаборатория отмечена." if route.lab_offset is not None else ""
-        self._set_status(f"Маршрут записан: {len(route.waypoints)} столов.{lab_note}{mouse_note}")
-
-    def _mark_next_waypoint(self) -> None:
+    def _mark_table(self) -> None:
+        """F6 while a run to the plantation is recorded (F2): «I am at a table»."""
         approach = getattr(self, "approach_recorder", None)
-        if approach is not None and approach.recording:
-            # while a run to the plantation is being recorded the same key marks "I am at a table"
-            if approach.mark_table():
-                self._set_status(f"Стол отмечен (отмечено столов: {sum(1 for e in approach._events if e.kind == 'interact' and e.value == 'harvest')}).")
+        if approach is None or not approach.recording:
+            self._set_status("Столы отмечаются во время записи пути до столов (F2).")
             return
-        if not self._route_recording or self.recorder is None:
-            self._set_status("Для отметки столов сначала начни запись маршрута клавишей F5.")
-            return
-        if self._recording_waiting:
-            self._set_status("У маршрута ожидания нет точек сбора. Вернись на старт и заверши запись.")
-            return
-        marked = self.recorder.marked_table_ids
-        next_table = next(
-            (table for table in sorted(self.profile.tables, key=lambda item: item.route_index) if table.table_id not in marked),
-            None,
-        )
-        if next_table is None:
-            self._set_status("Все столы уже отмечены. Вернись к старту и нажми F5.")
-            return
-        try:
-            self.recorder.mark_waypoint(next_table.table_id)
-        except Exception as exc:
-            self._set_status(str(exc))
-            return
-        self._set_status(f"Отмечен {next_table.name}. Следующий: нажми F6 у следующего стола.")
-
-    def _mark_laboratory(self) -> None:
-        if not self._route_recording or self._recording_waiting or self.recorder is None:
-            self._set_status("Лаборатория отмечается в основном маршруте.")
-            return
-        try:
-            self.recorder.mark_laboratory()
-        except RuntimeError as exc:
-            self._set_status(str(exc))
-            return
-        self._set_status("Лаборатория отмечена. Продолжи маршрут и вернись на старт.")
+        if approach.mark_table():
+            self._set_status(f"Стол отмечен (отмечено столов: {sum(1 for e in approach._events if e.kind == 'interact' and e.value == 'harvest')}).")
 
     def _set_automation_mode(self, mode: str) -> None:
         if mode == self.profile.automation_mode:
             return
-        if self._route_recording or (self.runner is not None and self.runner.worker_alive):
-            self.dashboard_page.mode_var.set(self.profile.automation_mode)
-            self._set_status("Останови автоматизацию или заверши запись, чтобы сменить режим.")
+        if self.runner is not None and self.runner.worker_alive:
+            self._set_status("Останови автоматизацию, чтобы сменить режим.")
             return
         if mode not in dict(AUTOMATION_MODES):
             return
@@ -906,16 +612,6 @@ class HarvestAssistantApp:
             self.profile.automation_mode = mode
         self._save_profile(force=True)
         self._refresh_rows()
-
-    def _clear_waiting_route(self) -> None:
-        if self._route_recording or (self.runner is not None and self.runner.worker_alive):
-            self._set_status("Останови автоматизацию или заверши запись, чтобы убрать ожидание.")
-            return
-        with self.profile_lock:
-            self.profile.waiting_route = RecordedRoute()
-        self._save_profile(force=True)
-        self._refresh_rows()
-        self._set_status("Маршрут ожидания убран.")
 
     def _save_laboratory(self, minutes: str, remaining: str, prepare: str, actions: str, finish: str) -> str:
         try:
@@ -934,8 +630,8 @@ class HarvestAssistantApp:
                 parse_steps(source)
         except ValueError as exc:
             return f"Не сохранено. {exc}"
-        if self._route_recording or (self.runner is not None and self.runner.worker_alive):
-            return "Останови автоматизацию или заверши запись перед сохранением."
+        if self.runner is not None and self.runner.worker_alive:
+            return "Останови автоматизацию перед сохранением."
         with self.profile_lock:
             lab = self.profile.laboratory
             lab.timer.interval_seconds = interval
@@ -949,8 +645,8 @@ class HarvestAssistantApp:
     def _choose_marker(self, stage: str) -> None:
         from .ui.marker_picker import select_marker_region
 
-        if self._route_recording or (self.runner is not None and self.runner.worker_alive):
-            self._set_status("Останови автоматизацию или заверши запись перед настройкой ориентира.")
+        if self.runner is not None and self.runner.worker_alive:
+            self._set_status("Останови автоматизацию перед настройкой ориентира.")
             return
         filename = filedialog.askopenfilename(
             parent=self.root, title="Выбери полный скриншот игры",
@@ -981,19 +677,6 @@ class HarvestAssistantApp:
             self._set_status("Ориентир сохранён.")
         except (ValueError, OSError, RuntimeError) as exc:
             messagebox.showwarning("Ориентир не сохранён", str(exc), parent=self.root)
-
-    def _verify_recorded_start_and_end(self, route: RecordedRoute) -> None:
-        marker = self.profile.start_marker
-        for title, filename in (
-            ("Начало", route.start_capture_template or route.start_anchor_template),
-            ("Конец", route.end_capture_template or route.end_anchor_template),
-        ):
-            if not filename:
-                raise ValueError(f"{title} записи не содержит снимка.")
-            frame = self.vision.load_rgb_image(filename)
-            if not self.vision.match_template(frame, marker.template, marker.region,
-                                              self.profile.interaction.anchor_threshold).found:
-                raise ValueError(f"{title} записи не совпадает с общим стартом.")
 
     def _notify(self, kind: str, title: str, message: str, from_hotkey: bool) -> None:
         """Show a dialog for button clicks; from a hotkey only update the status line.
@@ -1042,9 +725,6 @@ class HarvestAssistantApp:
         if self.screen is None:
             self._notify("warning", "Нет окна игры", "Сначала привяжи игровое окно.", from_hotkey)
             return
-        if self._route_recording:
-            self._notify("warning", "Идёт запись маршрута", "Заверши запись маршрута клавишей F5.", from_hotkey)
-            return
         if (
             self.runner is not None
             and not self.runner.stop_event.is_set()
@@ -1064,51 +744,10 @@ class HarvestAssistantApp:
             )
             return
         self.runner = None
-        if self.profile.vision_harvest and self.profile.runs_plantation:
-            self._start_vision_cycle(from_hotkey)
+        if not self.profile.runs_plantation:
+            self._notify("warning", "Лаборатория в разработке", "Пока работает только плантация.", from_hotkey)
             return
-        self.logger.info("Checking automation preconditions")
-        try:
-            setup_errors = self._automation_setup_errors()
-        except Exception as exc:
-            self.logger.exception("Automation preflight failed")
-            self._notify("error", "Ошибка проверки запуска", str(exc), from_hotkey)
-            return
-        if setup_errors:
-            self._notify(
-                "warning",
-                "Сначала закончи настройку",
-                "Перед запуском проверь:\n\n• " + "\n• ".join(setup_errors),
-                from_hotkey,
-            )
-            return
-        # The selected control mode decides whether the game needs foreground focus.
-        if not self._focus_game_for_run(from_hotkey):
-            return
-        self.logger.info("Automation preconditions passed; creating route runner")
-        try:
-            stop_event = threading.Event()
-            driver = InputDriver(self.screen, stop_event)
-            self.runner = self.runner_factory(
-                self.profile,
-                self.screen,
-                self.vision,
-                driver,
-                self._on_runner_snapshot,
-                profile_lock=self.profile_lock,
-                loot_reader=self.loot_reader,
-                on_loot=self._on_loot,
-                on_cycle=self._on_cycle,
-                on_harvest_view=self._remember_table_view,
-            )
-            if self.profile.runs_plantation:
-                self.stats.begin_session()
-            self.runner.start()
-            self.logger.info("Route runner started")
-        except Exception as exc:
-            self.logger.exception("Could not start route runner")
-            self.runner = None
-            self._notify("error", "Не удалось запустить маршрут", str(exc), from_hotkey)
+        self._start_vision_cycle(from_hotkey)
 
     def _start_autocop(self, selected_class: str, from_hotkey: bool = False) -> None:
         if self.screen is None:
@@ -1124,12 +763,6 @@ class HarvestAssistantApp:
             self._set_autocop_status("Не удалось открыть игровое окно.")
             return
         try:
-            if self._route_recording:
-                if self.recorder is not None:
-                    self.recorder.cancel()
-                self._route_recording = False
-                self._recording_waiting = False
-                self._set_autocop_status("Незавершённая запись F5 отменена. Запускаю автокоп.")
             runner_ref: list[AutocopRunner | None] = [None]
 
             def on_status(text: str) -> None:
@@ -1436,9 +1069,6 @@ class HarvestAssistantApp:
         if self.screen is None:
             self._notify("warning", "Нет окна игры", "Сначала привяжи игровое окно.", from_hotkey)
             return
-        if self._route_recording:
-            self._notify("warning", "Идёт запись", "Заверши запись перед зрительным тестом.", from_hotkey)
-            return
         if self.runner is not None and self.runner.worker_alive:
             self._set_status("Сначала останови текущий маршрут.")
             return
@@ -1551,9 +1181,6 @@ class HarvestAssistantApp:
             recorder.cancel()
             self.approach_recorder = None
         self.logger.warning("Emergency stop requested")
-        if self._route_recording and self.recorder is not None:
-            self.recorder.cancel()
-            self._route_recording = False
         if self.runner is not None:
             self.runner.stop()
         self._post_to_ui(lambda: self._set_status("Аварийный стоп: ввод отключён."))
@@ -1627,7 +1254,6 @@ class HarvestAssistantApp:
             return
         if not self._stop_runner_for_profile_edit():
             return
-        self._archive_route("до удаления стола")
         with self.profile_lock:
             self.profile.tables = [item for item in self.profile.tables if item.table_id != table.table_id]
             self.profile.waypoint_calibrations.pop(table.table_id, None)
@@ -1638,7 +1264,7 @@ class HarvestAssistantApp:
         self._selected_table_id = None
         self._save_profile(force=True)
         self._refresh_rows()
-        self._set_status(f"«{table.name}» удалён. Маршрут сохранён, из него убрана только точка этого стола.")
+        self._set_status(f"«{table.name}» удалён.")
 
     def _set_selected_timer(self) -> None:
         table = self._selected_table()
@@ -1657,9 +1283,6 @@ class HarvestAssistantApp:
         self._refresh_rows()
 
     def _prepare_calibration_edit(self) -> bool:
-        if self._route_recording:
-            self._set_status("Заверши запись маршрута клавишей F5 перед калибровкой.")
-            return False
         if self.screen is None or not self.screen.is_target_open():
             self._set_status("Открой привязанную игру перед калибровкой.")
             return False
@@ -1676,8 +1299,8 @@ class HarvestAssistantApp:
         if len(set(normalized)) != len(normalized):
             messagebox.showwarning("Клавиши совпадают", "У каждой команды должна быть своя горячая клавиша.", parent=self.root)
             return
-        if "<ctrl>+<f10>" in normalized or any("f3" in self._hotkey_parts(value) for value in entered_hotkeys.values()):
-            messagebox.showwarning("Клавиша зарезервирована", "Ctrl+F10 — привязка игры, Ctrl+F3 — отметка лаборатории.", parent=self.root)
+        if "<ctrl>+<f10>" in normalized:
+            messagebox.showwarning("Клавиша зарезервирована", "Ctrl+F10 — привязка игры.", parent=self.root)
             return
         movement_keys = {"w", "a", "s", "d", "e", "shift"}
         if any(movement_keys.intersection(self._hotkey_parts(value)) for value in entered_hotkeys.values()):
@@ -1706,51 +1329,6 @@ class HarvestAssistantApp:
         self._update_hotkey_help()
         self._refresh_rows()
 
-    def _automation_setup_errors(self) -> list[str]:
-        errors: list[str] = []
-        profile = self.profile
-        route = profile.route
-        now = time.time()
-        table_ids = {table.table_id for table in profile.tables}
-        waypoint_ids = [waypoint.table_id for waypoint in route.waypoints]
-        if not self.screen or not self.screen.is_target_open():
-            errors.append("игровое окно не найдено")
-        if route.duration_seconds <= 0:
-            errors.append("запиши основной маршрут")
-        if profile.runs_plantation:
-            if not profile.tables:
-                errors.append("добавь хотя бы один стол плантации")
-            if duplicates := sorted({table_id for table_id in waypoint_ids if waypoint_ids.count(table_id) > 1}):
-                errors.append(f"в маршруте повторяются столы: {', '.join(duplicates)}")
-            if missing := sorted(table_ids - set(waypoint_ids)):
-                errors.append(f"нет точек маршрута для столов: {', '.join(missing)}. Отметь их клавишей записи точки (обычно F6)")
-            if stale := sorted(set(waypoint_ids) - table_ids):
-                errors.append(f"в маршруте есть удалённые столы: {', '.join(stale)}")
-            for table in profile.tables:
-                if remaining_seconds(table, profile, now) is None:
-                    errors.append(f"задай начальное время для «{table.name}»")
-        if profile.runs_laboratory:
-            if route.lab_offset is None or not 0 <= route.lab_offset <= route.duration_seconds:
-                errors.append("отметь лабораторию в основном маршруте через Ctrl+F3")
-            if remaining_seconds(profile.laboratory.timer, profile, now) is None:
-                errors.append("задай остаток времени текущей партии на вкладке «Лаборатория»")
-            errors.extend(laboratory_errors(profile.laboratory, self.vision))
-        if profile.waiting_route.events or profile.runs_laboratory or profile.start_marker.template:
-            if not marker_available(profile.start_marker, self.vision):
-                errors.append("выбери общий старт в «Настройки → Маршрут»")
-            else:
-                routes = [("Основной маршрут", route)]
-                if profile.waiting_route.events:
-                    routes.append(("Маршрут ожидания", profile.waiting_route))
-                for title, recorded in routes:
-                    if recorded.duration_seconds <= 0:
-                        continue
-                    try:
-                        self._verify_recorded_start_and_end(recorded)
-                    except (RuntimeError, ValueError, OSError) as exc:
-                        errors.append(f"{title}: {exc}")
-        return errors
-
     def _toggle_timer_pause(self) -> None:
         with self.profile_lock:
             set_timer_paused(self.profile, self.timer_pause_var.get(), time.time())
@@ -1778,11 +1356,6 @@ class HarvestAssistantApp:
                 )
                 return False
             self.runner = None
-        if self._route_recording:
-            if self.recorder is not None:
-                self.recorder.cancel()
-            self._route_recording = False
-            self._set_status("Запись маршрута отменена из-за изменения профиля. Запиши маршрут заново.")
         return True
 
     def _on_table_selected(self, table_id: str | None) -> None:
@@ -1830,7 +1403,7 @@ class HarvestAssistantApp:
         self._last_runner_reason = snapshot.reason
         if snapshot.reason and snapshot.reason != previous_reason and snapshot.state != RunState.STOPPED:
             self._set_status(snapshot.reason)
-        self.run_state_var.set("Запись маршрута" if self._route_recording else self._state_label(snapshot.state.value))
+        self.run_state_var.set(self._state_label(snapshot.state.value))
         game_open = bool(self.screen and self.screen.is_target_open())
         if self.screen is None:
             window_status = "Окно не привязано"
@@ -1847,20 +1420,9 @@ class HarvestAssistantApp:
             self.profile.manual_timer_paused,
             game_open,
         )
-        main_recording = self._route_recording and not self._recording_waiting
-        marked_ids = self.recorder.marked_table_ids if main_recording and self.recorder is not None else None
-        self.route_page.refresh(
-            self.profile,
-            main_recording,
-            bool(self.recorder and self.recorder.mouse_trace_usable),
-            game_open,
-            marked_ids,
-        )
-        self.settings_page.refresh_waiting(self._route_recording and self._recording_waiting, game_open)
+        self.route_page.refresh(game_open)
         self.lab_page.refresh(self.profile, self.vision)
-        self.wizard.refresh(
-            automation_active=self._route_recording or snapshot.state not in (RunState.STOPPED, RunState.ERROR)
-        )
+        self.wizard.refresh(automation_active=snapshot.state not in (RunState.STOPPED, RunState.ERROR))
         self.settings_page.refresh(self.profile, window_status)
 
     def _idle_snapshot(self) -> RunSnapshot:
@@ -1946,8 +1508,6 @@ class HarvestAssistantApp:
         self._last_saved = now
 
     def _on_close(self) -> None:
-        if self._route_recording and self.recorder is not None:
-            self.recorder.cancel()
         self._cancel_autocop_hotkey_capture(restart_hotkeys=False)
         if self.autocop_runner is not None:
             if not self.autocop_runner.stop():

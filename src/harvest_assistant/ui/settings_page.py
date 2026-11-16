@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 import tkinter as tk
 from tkinter import ttk
 from types import SimpleNamespace
@@ -13,7 +12,7 @@ from PIL import Image, ImageTk
 
 from ..loot import LootItem
 from ..models import InteractionCalibration, Profile
-from .theme import (COLORS, FONT_SEMI, Card, HelpTip, PillButton, ScrollPage, Segmented, Toggle, divider, label, page_header,
+from .theme import (COLORS, FONT_SEMI, Card, HelpTip, PillButton, ScrollPage, Segmented, Toggle, label, page_header,
                     settings_row)
 
 SWATCH = {
@@ -24,8 +23,7 @@ SWATCH = {
 
 class SettingsPage(tk.Frame):
     HOTKEYS = (
-        ("Запись маршрута", "record_route_hotkey"),
-        ("Отметить стол", "mark_waypoint_hotkey"),
+        ("Отметить стол (при записи пути)", "mark_waypoint_hotkey"),
         ("Старт / пауза", "pause_hotkey"),
         ("Аварийный стоп", "stop_hotkey"),
         ("Автосбор вкл / выкл", "auto_hotkey"),
@@ -91,7 +89,6 @@ class SettingsPage(tk.Frame):
         self._taught_count = -1
         self.render_taught()
         self.route = SimpleNamespace(refresh=self._refresh_route)
-        self.render_saved()
         self.collect = SimpleNamespace(refresh=self._refresh_collect, set_services=lambda *_: None, show_loot=self.show_loot)
 
     # ---- sections ----------------------------------------------------------------------
@@ -116,31 +113,10 @@ class SettingsPage(tk.Frame):
                          "где записан старт.").pack(side="right", padx=(0, 12))
 
     def _build_route(self, body: tk.Frame) -> None:
-        card = self._group(body, "Маршрут")
-        label(card.body, "", size=12, bg=card.fill, textvariable=self.route_state).pack(anchor="w")
-        label(card.body, "", size=9, color="muted", bg=card.fill, textvariable=self.route_detail, justify="left", wraplength=560).pack(anchor="w", pady=(4, 14))
-        row = tk.Frame(card.body, bg=card.fill)
-        row.pack(fill="x")
-        self.record_button = PillButton(row, "Записать основной", self.callbacks["toggle_recording"], style="primary", padx=20, height=38)
-        self.record_button.pack(side="left")
-        self.mark_button = PillButton(row, "Отметить стол", self.callbacks["mark_waypoint"], style="secondary", padx=18, height=38)
-        self.mark_button.pack(side="left", padx=(8, 0))
-        label(card.body, "Обе записи начинаются и заканчиваются на общем старте. В основном маршруте F6 отмечает стол, Ctrl+F3 — лабораторию.",
-              size=9, color="faint", bg=card.fill, justify="left", wraplength=560).pack(anchor="w", pady=(14, 0))
-        row = tk.Frame(card.body, bg=card.fill)
-        row.pack(fill="x", pady=(12, 0))
-        self.waiting_button = PillButton(row, "Записать ожидание", self.callbacks["record_waiting"], style="secondary", padx=11, height=34, size=9)
-        self.waiting_button.pack(side="left", padx=(0, 6))
-        PillButton(row, "Общий старт", self.callbacks["start_marker"], style="secondary", padx=11, height=34, size=9).pack(side="left", padx=(0, 6))
-        self.clear_waiting_button = PillButton(row, "Убрать ожидание", self.callbacks["clear_waiting"], style="ghost", padx=8, height=34, size=9)
-        self.clear_waiting_button.pack(side="left")
-        label(card.body, "", textvariable=self.waiting_state, size=9, color="muted", bg=card.fill,
-              wraplength=560, justify="left").pack(anchor="w", pady=(6, 0))
-        divider(card.body).pack(fill="x", pady=16)
-        label(card.body, "Путь до столов", size=11, bg=card.fill).pack(anchor="w")
-        label(card.body, "Встань в комнате спавна, нажми F2, при желании медленно осмотрись по кругу, пройди до столов, у дверей жми E, "
-              "и нажми F2 ещё раз. Один заход = один урок. Запиши несколько заходов из разных точек комнаты, и бот сможет стартовать откуда угодно.",
-              size=9, color="muted", bg=card.fill, wraplength=560, justify="left").pack(anchor="w", pady=(4, 8))
+        card = self._group(body, "Путь до столов")
+        label(card.body, "Встань в доме, нажми F2, дойди до плантации (у дверей жми E), пройди по рядам и у каждого стола "
+              "нажми F6, потом F2 ещё раз. Один заход = один урок; несколько заходов из разных точек дома делают бота увереннее.",
+              size=9, color="muted", bg=card.fill, wraplength=560, justify="left").pack(anchor="w", pady=(0, 8))
         record_row = tk.Frame(card.body, bg=card.fill)
         record_row.pack(fill="x")
         self.approach_button = PillButton(record_row, "Записать заход (F2)", self.callbacks["approach_record"], style="primary", padx=16, height=34, size=9)
@@ -160,14 +136,6 @@ class SettingsPage(tk.Frame):
         self.visual_test_button.pack(side="left")
         PillButton(visual_row, "Остановить тест", self.callbacks["visual_stop"], style="ghost",
                    padx=12, height=34, size=9).pack(side="left", padx=(8, 0))
-        divider(card.body).pack(fill="x", pady=16)
-        head = tk.Frame(card.body, bg=card.fill)
-        head.pack(fill="x")
-        label(head, "Сохранённые маршруты", size=11, bg=card.fill).pack(side="left")
-        PillButton(head, "Сохранить текущий", self.callbacks["save_route"], style="secondary", padx=14, height=32, size=9).pack(side="right")
-        label(card.body, "Прежний маршрут сохраняется сам, когда его заменяют или стирают.", size=9, color="faint", bg=card.fill).pack(anchor="w", pady=(4, 8))
-        self.saved_rows = tk.Frame(card.body, bg=card.fill)
-        self.saved_rows.pack(fill="x")
 
     def _build_collect(self, body: tk.Frame) -> None:
         card = self._group(body, "Сбор урожая")
@@ -198,12 +166,6 @@ class SettingsPage(tk.Frame):
         Toggle(control, self.auto_var, command=self.callbacks["toggle_auto"]).pack()
         control = settings_row(card, "Приостановить рост", "Таймеры замрут, автосбор будет ждать")
         Toggle(control, self.timer_pause_var, command=self.callbacks["timer_pause"]).pack()
-        control = settings_row(
-            card, "Сбор по зрению",
-            "Скрипт сам доходит до плантации по записанным заходам (F2), находит столы по значку, подходит и собирает. "
-            "Выключено: старый режим, повтор записанного маршрута.",
-        )
-        Toggle(control, self.vision_harvest_var, command=self.callbacks["toggle_vision_harvest"]).pack()
 
     def _build_table_vision(self, body: tk.Frame) -> None:
         card = self._group(body, "Зрение плантации")
@@ -223,7 +185,7 @@ class SettingsPage(tk.Frame):
         for index, (title, attribute) in enumerate(self.HOTKEYS):
             control = settings_row(card, title, first=index == 0)
             ttk.Entry(control, textvariable=self.hotkey_vars[attribute], width=12).pack()
-        label(card.body, "WASD, E и Shift нужны маршруту. Ctrl+F10 — привязка игры, Ctrl+F3 — отметка лаборатории.",
+        label(card.body, "WASD, E и Shift нужны боту в игре. Ctrl+F10 — привязка игры.",
               size=9, color="faint", bg=card.fill, justify="left", wraplength=560).pack(anchor="w", pady=(12, 0))
         row = tk.Frame(card.body, bg=card.fill)
         row.pack(fill="x", pady=(14, 0))
@@ -259,19 +221,13 @@ class SettingsPage(tk.Frame):
         if self.timer_pause_var.get() != profile.manual_timer_paused:
             self.timer_pause_var.set(profile.manual_timer_paused)
 
-    def refresh_waiting(self, recording: bool, game_open: bool) -> None:
-        route = self.profile.waiting_route
-        marker = "общий старт выбран" if self.profile.start_marker.template else "выбери общий старт"
-        status = f"Запись ожидания идёт. Заверши её в игре: {self.profile.record_route_hotkey.upper()}." if recording else (
-            f"Ожидание записано · {route.duration_seconds:.1f} с · {marker}." if route.events else
-            f"Петля ожидания не записана · {marker}."
+    def _refresh_route(self, game_open: bool) -> None:
+        count = max(0, self._taught_count)
+        self.approach_note.set(
+            f"Заходов обучения: {count}. F3 найдёт дорогу по ним." if count
+            else "Заходов нет: запиши хотя бы один (F2), без них бот не найдёт дорогу."
         )
-        if self.waiting_state.get() != status:
-            self.waiting_state.set(status)
-        self.waiting_button.configure(text="Завершить ожидание" if recording else "Записать ожидание",
-                                      state="normal" if game_open else "disabled")
-        self.clear_waiting_button.configure(state="normal" if route.events and not recording else "disabled")
-        self.visual_test_button.configure(state="normal" if game_open and not recording else "disabled")
+        self.visual_test_button.configure(state="normal" if game_open else "disabled")
 
     def update_hotkey_help(self, profile: Profile) -> None:
         self.hotkey_help.set("")
@@ -290,54 +246,6 @@ class SettingsPage(tk.Frame):
             label(row, f"{run.duration:.0f} с · кадров {len(run.keyframes)}", size=9, color="muted", bg=fill).pack(side="left", padx=(10, 0))
             PillButton(row, "×", lambda r=run.run_id: self.callbacks["taught_delete"](r), style="ghost", padx=12, height=28, size=10).pack(side="right")
         self._taught_count = len(runs)
-
-    def render_saved(self) -> None:
-        for child in self.saved_rows.winfo_children():
-            child.destroy()
-        saved = self.callbacks["list_routes"]()
-        fill = self.saved_rows.cget("bg")
-        if not saved:
-            label(self.saved_rows, "Пока ничего не сохранено.", size=9, color="muted", bg=fill).pack(anchor="w")
-            return
-        for item in saved[:6]:
-            row = tk.Frame(self.saved_rows, bg=fill)
-            row.pack(fill="x", pady=4)
-            text = tk.Frame(row, bg=fill)
-            text.pack(side="left", fill="x", expand=True)
-            label(text, item["label"], size=10, bg=fill).pack(anchor="w")
-            when = time.strftime("%d.%m.%Y %H:%M", time.localtime(item["saved_at"]))
-            label(text, f"{when} · столов {item['waypoints']} · {item['duration']:.0f} с" + (f" · {item['reason']}" if item["reason"] else ""),
-                  size=9, color="muted", bg=fill).pack(anchor="w")
-            PillButton(row, "×", lambda p=item["path"]: self.callbacks["delete_route"](p), style="ghost", padx=12, height=30, size=10).pack(side="right")
-            PillButton(row, "Загрузить", lambda p=item["path"]: self.callbacks["load_route"](p), style="secondary", padx=14, height=30, size=9).pack(side="right", padx=(0, 6))
-        if len(saved) > 6:
-            label(self.saved_rows, f"Показаны 6 из {len(saved)} (новые сверху).", size=9, color="faint", bg=fill).pack(anchor="w", pady=(4, 0))
-
-    def _refresh_route(self, profile: Profile, is_recording: bool, camera_ok: bool, game_open: bool, marked_ids: set[str] | None) -> None:
-        count = max(0, self._taught_count)
-        self.approach_note.set(
-            f"Заходов обучения: {count}. F3 найдёт дорогу по ним." if count
-            else "Заходов нет: F3 ищет дорогу по картинкам (менее надёжно)."
-        )
-        signature = (len(profile.route.waypoints), profile.route.lab_offset, round(profile.route.duration_seconds, 1), is_recording)
-        if signature != self._route_signature:
-            self._route_signature = signature
-            self.render_saved()
-        marked = marked_ids or set()
-        route = profile.route
-        if is_recording:
-            self.route_state.set("● Идёт запись")
-            self.route_detail.set(f"Отмечено столов: {len(marked)} из {len(profile.tables)}")
-        elif route.waypoints or route.lab_offset is not None:
-            self.route_state.set("Маршрут записан")
-            lab = " · лаборатория" if route.lab_offset is not None else ""
-            self.route_detail.set(f"{len(route.waypoints)} столов{lab} · {route.duration_seconds:.0f} с")
-        else:
-            self.route_state.set("Маршрут не записан")
-            self.route_detail.set("Запиши обход столов, лаборатории или обеих зон.")
-        self.record_button.configure(text="Завершить запись" if is_recording else "Записать основной",
-                                     state="normal" if game_open else "disabled")
-        self.mark_button.configure(state="normal" if is_recording and game_open else "disabled")
 
     # ---- collect ------------------------------------------------------------------------
 

@@ -8,12 +8,12 @@ from typing import Callable
 
 from PIL import Image, ImageDraw, ImageTk
 
-from ..models import AUTOMATION_MODES, Profile, RunSnapshot, RunState, TableProfile, effective_interval, remaining_seconds
+from ..models import Profile, RunSnapshot, RunState, TableProfile, effective_interval, remaining_seconds
 from ..overlay_bridge import PACKAGE_PRICES, format_money
 from ..stats import StatsStore
 from ..vision import VisionService
 from .modifiers_popup import ModifiersPopup, icon
-from .theme import COLORS, FONT, FONT_LIGHT, FONT_SEMI, Bar, Card, PillButton, ScrollPage, Segmented, caption, divider, label, page_header
+from .theme import COLORS, FONT, FONT_LIGHT, FONT_SEMI, Bar, Card, PillButton, ScrollPage, caption, divider, label, page_header
 
 KINDS = (
     ("yellow", COLORS["yellow"], "Жёлтые"),
@@ -102,9 +102,6 @@ class DashboardPage(tk.Frame):
         body = scroll.inner
         page_header(body, "Запуск", "Старт, пауза и стоп работы").pack(fill="x", pady=(34, 20), padx=4)
         self.mode_var = tk.StringVar(value=profile.automation_mode)
-        label(body, "Режим автоматизации", size=10, color="muted").pack(anchor="w", padx=4)
-        Segmented(body, self.mode_var, list(AUTOMATION_MODES),
-                  command=lambda: callbacks["set_mode"](self.mode_var.get())).pack(anchor="w", pady=(6, 18), padx=4)
 
         grid = tk.Frame(body, bg=COLORS["bg"])
         grid.pack(fill="x", pady=(0, 34))
@@ -232,9 +229,8 @@ class DashboardPage(tk.Frame):
             row = self._rows[table.table_id]
             status = statuses.get(table.table_id)
             remaining = remaining_seconds(table, self.profile, now) if status is None else status.remaining_seconds
-            has_point = any(wp.table_id == table.table_id for wp in self.profile.route.waypoints)
             ready = remaining == 0
-            row["name"].configure(text=table.name, fg=COLORS["text"] if has_point else COLORS["amber"])
+            row["name"].configure(text=table.name, fg=COLORS["text"])
             row["time"].configure(text=self._format_time(remaining), fg=COLORS["green"] if ready else COLORS["muted"])
             interval = max(1, effective_interval(table))
             self._show_modifiers(row, table)
