@@ -149,7 +149,7 @@ class VpnCard(tk.Frame):
         tk.Label(head, text=vpn.get("title", "Проблема с серверами?").upper(), bg=STRIP, fg=TEXT,
                  font=(HEAD, 20)).pack(side="left", padx=(6, 0))
         tk.Label(body, text=vpn.get("text", ""), bg=STRIP, fg=SOFT, font=(BODY, 12), justify="left", anchor="w",
-                 wraplength=420).pack(anchor="w", pady=(4, 12))
+                 wraplength=520).pack(anchor="w", pady=(4, 12))
         row = tk.Frame(body, bg=STRIP)
         row.pack(anchor="w")
         tk.Label(row, text=vpn["code"], bg="#0f1a24", fg="#ffffff", font=(HEAD, 18), padx=14, pady=0,
