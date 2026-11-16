@@ -108,7 +108,7 @@ class HarvestAssistantApp:
         self._closing = False
 
         self.root.title("Hidden pool — rob run edition")
-        self.root.geometry("1100x780")
+        self.root.geometry("1150x900")
         self.root.minsize(920, 640)
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -189,29 +189,32 @@ class HarvestAssistantApp:
         nav = tk.Frame(rail, bg=COLORS["rail"])
         nav.pack(fill="x", padx=12)
         for page_id, text, badge in (
+            ("launch", "Запуск", ""),
             ("tables", "Плантация", ""),
-            ("lab", "Лаборатория", ""),
+            ("lab", "Лаборатория", "в разработке"),
             ("autocop", "Автокоп", ""),
             ("stats", "Статистика", ""),
             ("overlay", "Оверлей", ""),
             ("settings", "Настройки", ""),
         ):
-            item = NavItem(nav, text, lambda value=page_id: self._show_page(value), badge=badge)
+            ready = page_id != "lab"   # the laboratory is not ready: shown, but cannot be opened
+            item = NavItem(nav, text, lambda value=page_id: self._show_page(value), badge=badge, enabled=ready)
             item.pack(fill="x", pady=2)
             self._nav_buttons[page_id] = item
         from .ui.update_box import UpdateBox
 
         self.update_box = UpdateBox(rail, self._post_to_ui, self._on_close)
         self.update_box.pack(side="bottom", fill="x", padx=22, pady=(0, 22))
+        # the state of the work and of the game, above the updates
+        states = tk.Frame(rail, bg=COLORS["rail"])
+        states.pack(side="bottom", fill="x", padx=26, pady=(0, 18))
+        StatusDot(states, self.auto_state_var, self._pill_color, command=self._toggle_auto).pack(anchor="w", pady=2)
+        StatusDot(states, self.run_state_var, self._pill_color).pack(anchor="w", pady=2)
+        StatusDot(states, self.game_connection_var, self._pill_color).pack(anchor="w", pady=2)
 
         main = tk.Frame(shell, bg=COLORS["bg"])
         main.pack(side="left", fill="both", expand=True)
-        topbar = tk.Frame(main, bg=COLORS["bg"])
-        topbar.pack(fill="x", padx=36, pady=(22, 0))
-        StatusDot(topbar, self.game_connection_var, self._pill_color).pack(side="right", padx=(18, 0))
-        StatusDot(topbar, self.run_state_var, self._pill_color).pack(side="right")
-        StatusDot(topbar, self.auto_state_var, self._pill_color, command=self._toggle_auto).pack(side="right", padx=(0, 18))
-        tk.Label(topbar, textvariable=self.hotkey_help_var, bg=COLORS["bg"], fg=COLORS["faint"], font=(FONT, 8)).pack(side="left")
+        tk.Frame(main, bg=COLORS["bg"], height=6).pack(fill="x")   # the keys line and the states moved: keys are in Settings
 
         self.page_host = tk.Frame(main, bg=COLORS["bg"])
         self.page_host.pack(fill="both", expand=True)
@@ -231,7 +234,11 @@ class HarvestAssistantApp:
             "set_modifiers": self._set_table_modifiers,
             "remove": self._remove_table,
         }
-        self.dashboard_page = DashboardPage(self.page_host, dashboard_callbacks, self._on_table_selected, self.profile, self.vision, self.timer_pause_var, self.stats)
+        from .ui.plantation_page import PlantationPage
+
+        self.plantation_page = PlantationPage(self.page_host)
+        self.dashboard_page = DashboardPage(self.page_host, dashboard_callbacks, self._on_table_selected, self.profile, self.vision,
+                                            self.timer_pause_var, self.stats, tables_parent=self.plantation_page.tables_host)
         self.stats_page = StatsPage(self.page_host, self.stats)
         self.lab_page = LabPage(
             self.page_host, self.profile, self._save_laboratory,
@@ -285,6 +292,7 @@ class HarvestAssistantApp:
             },
             self.profile,
             self.timer_pause_var,
+            plantation_parent=self.plantation_page.settings_host,
         )
         self.route_page = self.settings_page.route
         self.wizard = self.settings_page.collect
@@ -292,7 +300,8 @@ class HarvestAssistantApp:
         self.clock_mode_var = self.settings_page.clock_mode_var
         self.hotkey_vars = self.settings_page.hotkey_vars
         self.pages = {
-            "tables": self.dashboard_page,
+            "launch": self.dashboard_page,
+            "tables": self.plantation_page,
             "lab": self.lab_page,
             "autocop": self.autocop_page,
             "stats": self.stats_page,
@@ -301,7 +310,7 @@ class HarvestAssistantApp:
         }
         for page in self.pages.values():
             page.place(relx=0, rely=0, relwidth=1, relheight=1)
-        self._show_page("tables")
+        self._show_page("launch")
         self._update_hotkey_help()
 
     @staticmethod

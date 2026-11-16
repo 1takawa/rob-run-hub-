@@ -85,6 +85,7 @@ class DashboardPage(tk.Frame):
         vision: VisionService,
         timer_pause_var: tk.BooleanVar,
         stats: StatsStore,
+        tables_parent: tk.Misc | None = None,
     ) -> None:
         super().__init__(parent, bg=COLORS["bg"])
         self.stats = stats
@@ -99,7 +100,7 @@ class DashboardPage(tk.Frame):
         scroll = ScrollPage(self, max_width=940)
         scroll.pack(fill="both", expand=True)
         body = scroll.inner
-        page_header(body, "Плантация").pack(fill="x", pady=(34, 20), padx=4)
+        page_header(body, "Запуск", "Старт, пауза и стоп работы").pack(fill="x", pady=(34, 20), padx=4)
         self.mode_var = tk.StringVar(value=profile.automation_mode)
         label(body, "Режим автоматизации", size=10, color="muted").pack(anchor="w", padx=4)
         Segmented(body, self.mode_var, list(AUTOMATION_MODES),
@@ -171,8 +172,11 @@ class DashboardPage(tk.Frame):
         label(inner, "", size=9, color="faint", bg=left.fill, textvariable=self.hint, justify="left", wraplength=250).pack(anchor="w", pady=(12, 0))
 
         # --- right: up to six tables, one compact line each
-        right = Card(grid, padding=(14, 14), radius=22)
-        right.grid(row=0, column=1, sticky="new")
+        right = Card(tables_parent if tables_parent is not None else grid, padding=(14, 14), radius=22)
+        if tables_parent is not None:
+            right.pack(fill="x")             # on the «Плантация» tab
+        else:
+            right.grid(row=0, column=1, sticky="new")
         self.rows_card = right
         head = tk.Frame(right.body, bg=right.fill)
         head.pack(fill="x", padx=12, pady=(4, 8))

@@ -20,10 +20,10 @@ class UpdateBox(tk.Frame):
         self.check_button = PillButton(self, "Проверить обновления", self.check, style="secondary", padx=14, height=32, size=9)
         self.check_button.pack(anchor="w")
         self.message = tk.Label(self, text="", bg=bg, fg=COLORS["muted"], font=(FONT, 8), anchor="w", justify="left",
-                                wraplength=180)
+                                wraplength=165)
         self.message.pack(fill="x", pady=(6, 0))
         self.changes = tk.Label(self, text="", bg=bg, fg=COLORS["faint"], font=(FONT, 8), anchor="w", justify="left",
-                                wraplength=180)
+                                wraplength=165)
         self.action = PillButton(self, "Загрузить", self.download, style="primary", padx=16, height=30, size=9)
         self.version = tk.Label(self, text="", bg=bg, fg=COLORS["faint"], font=(FONT, 7), anchor="w")
         self.version.pack(fill="x", pady=(6, 0))

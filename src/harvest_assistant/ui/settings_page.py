@@ -40,6 +40,7 @@ class SettingsPage(tk.Frame):
         callbacks: dict[str, Callable[[], None]],
         profile: Profile,
         timer_pause_var: tk.BooleanVar,
+        plantation_parent: tk.Misc | None = None,
     ) -> None:
         super().__init__(parent, bg=COLORS["bg"])
         self.callbacks = callbacks
@@ -74,13 +75,15 @@ class SettingsPage(tk.Frame):
         scroll = ScrollPage(self, max_width=720)
         scroll.pack(fill="both", expand=True)
         body = scroll.inner
-        page_header(body, "Настройки", "Приложение и плантация").pack(fill="x", pady=(34, 22), padx=4)
+        page_header(body, "Настройки", "Приложение" if plantation_parent is not None else "Приложение и плантация").pack(
+            fill="x", pady=(34, 22), padx=4)
+        farm = plantation_parent if plantation_parent is not None else body
         self._build_game(body)
-        self._build_route(body)
-        self._build_collect(body)
-        self._build_timers(body)
+        self._build_route(farm)
+        self._build_collect(farm)
+        self._build_timers(farm)
         self._build_reconnect(body)
-        self._build_table_vision(body)
+        self._build_table_vision(farm)
         self._build_keys(body)
         tk.Frame(body, height=34, bg=COLORS["bg"]).pack()
 

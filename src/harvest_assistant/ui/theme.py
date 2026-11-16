@@ -457,18 +457,21 @@ class Bar(tk.Canvas):
 class NavItem(tk.Canvas):
     """Sidebar entry with a soft selection pill."""
 
-    def __init__(self, parent: tk.Misc, text: str, command: Callable[[], None], *, badge: str = "") -> None:
-        super().__init__(parent, height=40, bg=parent.cget("bg"), highlightthickness=0, bd=0, cursor="hand2")
+    def __init__(self, parent: tk.Misc, text: str, command: Callable[[], None], *, badge: str = "",
+                 enabled: bool = True) -> None:
+        super().__init__(parent, height=40, bg=parent.cget("bg"), highlightthickness=0, bd=0,
+                         cursor="hand2" if enabled else "arrow")
         self._text, self._command, self._badge = text, command, badge
+        self._enabled = enabled
         self._selected = False
         self._hover = False
         self.bind("<Configure>", lambda _e: self._draw())
         self.bind("<Enter>", lambda _e: self._hovered(True))
         self.bind("<Leave>", lambda _e: self._hovered(False))
-        self.bind("<ButtonPress-1>", lambda _e: self._command())
+        self.bind("<ButtonPress-1>", lambda _e: self._command() if self._enabled else None)
 
     def _hovered(self, value: bool) -> None:
-        self._hover = value
+        self._hover = value and self._enabled
         self._draw()
 
     def select(self, selected: bool) -> None:
@@ -482,7 +485,11 @@ class NavItem(tk.Canvas):
             fill = COLORS["surface_hi"] if self._selected else COLORS["surface"]
             self._image = shape_image(width, 40, 12, fill)
             self.create_image(0, 0, anchor="nw", image=self._image)
-        color = COLORS["text"] if self._selected else COLORS["muted"]
+        color = COLORS["text"] if self._selected else (COLORS["muted"] if self._enabled else COLORS["faint"])
+        if self._badge and not self._enabled:   # a tab that is not ready: name on top, the note under it
+            self.create_text(18, 14, text=self._text, anchor="w", fill=color, font=(FONT, 11))
+            self.create_text(18, 31, text=self._badge, anchor="w", fill=COLORS["amber"], font=(FONT, 7))
+            return
         self.create_text(18, 20, text=self._text, anchor="w", fill=color, font=(FONT_SEMI if self._selected else FONT, 11))
         if self._badge:
             self.create_text(width - 16, 20, text=self._badge, anchor="e", fill=COLORS["faint"], font=(FONT, 8))

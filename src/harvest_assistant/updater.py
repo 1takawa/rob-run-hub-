@@ -52,7 +52,7 @@ def check(folder: Path = PROJECT_DIR) -> UpdateInfo:
         local = _git("rev-parse", "--short", "HEAD", folder=folder).stdout.strip()
         behind = int(_git("rev-list", "--count", f"HEAD..{REMOTE}/{BRANCH}", folder=folder).stdout.strip() or 0)
         if behind == 0:
-            return UpdateInfo("latest", "Установлена актуальная версия.", local)
+            return UpdateInfo("latest", "Актуальная версия.", local)
         titles = _git("log", "--format=%s", "-n", "8", f"HEAD..{REMOTE}/{BRANCH}", folder=folder).stdout.splitlines()
         changed = _git("status", "--porcelain", "--untracked-files=no", folder=folder).stdout.strip()
         if changed:
