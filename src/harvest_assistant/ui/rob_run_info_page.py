@@ -1,4 +1,4 @@
-"""«ROB RUN Info»: the decoder calculator, in the look of the game.
+"""«Рейд калькулятор» (in the «ROB RUN Info» part of the menu): the decoder calculator, in the look of the game.
 
 Pick a structure (a tile), set the fuses in it with − / + (the cells fill up), and see the defense and how many
 decoders of each quality it takes and how long they install."""
@@ -34,7 +34,7 @@ class ROBRunInfoPage(tk.Frame):
         scroll = ScrollPage(self, max_width=980)
         scroll.pack(fill="both", expand=True)
         body = scroll.inner
-        page_header(body, "ROB RUN Info", "калькулятор декодеров").pack(fill="x", pady=(34, 20), padx=4)
+        page_header(body, "Рейд калькулятор", "калькулятор декодеров").pack(fill="x", pady=(34, 20), padx=4)
 
         # 1. the structure
         pick = Block(body, "Строение", "lime")

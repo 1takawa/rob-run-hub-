@@ -195,21 +195,24 @@ class HarvestAssistantApp:
         self._nav_buttons: dict[str, NavItem] = {}
         nav = tk.Frame(rail, bg=COLORS["rail"])
         nav.pack(fill="x", padx=12)
-        for page_id, text, badge in (
-            ("home", "Главная", ""),
-            ("launch", "Запуск", ""),
-            ("tables", "Плантация", ""),
-            ("lab", "Лаборатория", "в разработке"),
-            ("autocop", "Автокоп", ""),
-            ("stats", "Статистика", ""),
-            ("rob_run_info", "ROB RUN Info", ""),
-            ("overlay", "Оверлей", ""),
-            ("settings", "Настройки", ""),
-        ):
-            ready = page_id != "lab"   # the laboratory is not ready: shown, but cannot be opened
-            item = NavItem(nav, text, lambda value=page_id: self._show_page(value), badge=badge, enabled=ready)
-            item.pack(fill="x", pady=2)
-            self._nav_buttons[page_id] = item
+        sections = (   # (heading or None, the tabs under it)
+            (None, (("home", "Главная", ""),)),
+            ("Боты", (("launch", "Запуск", ""), ("tables", "Плантация", ""), ("lab", "Лаборатория", "в разработке"),
+                      ("autocop", "Автокоп", ""))),
+            ("ROB RUN Info", (("rob_run_info", "Рейд калькулятор", ""),)),
+            (None, (("stats", "Статистика", ""), ("overlay", "Оверлей", ""), ("settings", "Настройки", ""))),
+        )
+        for index, (heading, tabs) in enumerate(sections):
+            if index:
+                tk.Frame(nav, bg=COLORS["rail"], height=10).pack(fill="x")
+            if heading:
+                tk.Label(nav, text=heading.upper(), bg=COLORS["rail"], fg=COLORS["faint"], font=(FONT_SEMI, 8),
+                         anchor="w").pack(fill="x", padx=18, pady=(0, 2))
+            for page_id, text, badge in tabs:
+                ready = page_id != "lab"   # the laboratory is not ready: shown, but cannot be opened
+                item = NavItem(nav, text, lambda value=page_id: self._show_page(value), badge=badge, enabled=ready)
+                item.pack(fill="x", pady=1)
+                self._nav_buttons[page_id] = item
         from .ui.update_box import UpdateBox
 
         self.update_box = UpdateBox(rail, self._post_to_ui, self._on_close)
