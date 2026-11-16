@@ -371,7 +371,8 @@ class AutocopRunner:
             if button is None:
                 continue
             if not button.active:
-                found[name] = "0"   # a black button: no token for it (its red «0/1» does not read)
+                if name != self.selected_class:   # the chosen one was just clicked: dark for a moment, not «no tokens»
+                    found[name] = "0"   # a black button: no token for it (its red «0/1» does not read)
                 continue
             try:
                 value = self.reader.read_tokens(frame, button)
@@ -421,6 +422,7 @@ class AutocopRunner:
 
     def _run(self) -> None:
         last_press = last_click = 0.0
+        dark_since: float | None = None   # since when the chosen class's button is dark
         proofs = 0          # looks in a row that showed the success
         refused = False     # «слишком много копов» is on the screen now (a refusal counts once)
         self.started_at = time.time()
@@ -436,6 +438,10 @@ class AutocopRunner:
                     now = time.monotonic()
                     if up:
                         if button is not None and button.active:
+                            dark_since = None
+                            if self.tokens == "0":   # it is lit: there are tokens after all, read how many soon
+                                self.tokens, self._tokens_at = None, 0.0
+                                self._tell_tokens({self.selected_class: "есть"})
                             if now - last_click >= self.CLICK_GAP:
                                 x, y = button.center
                                 self.driver.click_at(x + origin[0], y + origin[1], "left")
@@ -455,11 +461,16 @@ class AutocopRunner:
                                 self._tell_tokens({self.selected_class: self.tokens})
                             self._show("run", "confirm")
                         else:
-                            if button is not None and not button.active:
+                            # right after a click the button is dark for a moment: that is not «no tokens».
+                            # Only a button that stays dark, with no click of ours, means the class is not available.
+                            dark_since = dark_since or now
+                            lasting = now - dark_since > 2.5 and now - last_click > 2.5
+                            if button is not None and not button.active and lasting:
                                 self.tokens = "0"
                                 self._tell_tokens({self.selected_class: "0"})
                             self._status(f"Жду светлую кнопку «Подтвердить» у класса «{self.selected_class}».")
-                            self._show("wait", "confirm", "Класс недоступен: нет жетона", "wait")
+                            self._show("wait", "confirm", "Класс недоступен: нет жетона" if lasting else "Жду ответа игры",
+                                       "wait")
                         self.stop_event.wait(self.TICK)
                         continue
                     # 2) the service prompt of the counter

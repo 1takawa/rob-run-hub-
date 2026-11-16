@@ -300,3 +300,41 @@ class Memory(unittest.TestCase):
             save_memory(path, {"tokens": {"Сержант II": "19/1"}, "last": {"class": "Сержант II", "tries": 131, "seconds": 1482}})
             self.assertEqual(load_memory(path)["tokens"]["Сержант II"], "19/1")
             self.assertEqual(load_memory(path)["last"]["tries"], 131)
+
+
+class DarkAfterClick(unittest.TestCase):
+    def test_a_button_dark_for_a_moment_after_the_click_is_not_no_tokens(self) -> None:
+        from harvest_assistant import autocop
+        from harvest_assistant.autocop import AutocopRunner, ServiceView
+
+        lit = stretched(1280, 1024)[0]
+        dark = lit.copy()
+        dark[740:790, 380:560] = (0, 0, 0)          # the Сержант II button of this size goes dark (pressed)
+        frames = iter([lit, dark, dark, lit, None])
+        told: list = []
+
+        class Screen:
+            background_control = True
+
+            def capture(self_inner):
+                frame = next(frames)
+                if frame is None:
+                    runner.stop_event.set()
+                    return np.full((1024, 1280, 3), 45, np.uint8)
+                return frame
+
+        class Driver:
+            def __init__(self_inner, *_a): pass
+            def play_key(self_inner, *_a): pass
+            def click_at(self_inner, *_a): pass
+            def release_all(self_inner): pass
+            def stop(self_inner): pass
+
+        with mock.patch.object(autocop, "InputDriver", Driver), \
+                mock.patch.object(autocop.AutocopScreenReader, "read_tokens", lambda self, frame, button: None):
+            runner = AutocopRunner(Screen(), "Сержант II", lambda _t: None, lambda _t: None, on_tokens=told.append)
+            runner.TICK = 0.0
+            runner.reader.read = lambda frame, cls: ServiceView("", False, False, False, False, None, False, False)
+            runner._run()
+        self.assertNotIn({"Сержант II": "0"}, told)
+        self.assertNotEqual(runner.tokens, "0")

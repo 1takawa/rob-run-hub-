@@ -65,6 +65,8 @@ def token_text(token: str | None) -> tuple[str, str]:
         return "цена — у стойки", DIM
     if token == "бесплатно":
         return "Бесплатно", TEXT
+    if token == "есть":
+        return "жетоны есть", TEXT
     if token == "0" or token.startswith("0/"):
         return "жетонов нет", RED
     return f"жетон {token}", TEXT
