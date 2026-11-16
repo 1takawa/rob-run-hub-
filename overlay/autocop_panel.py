@@ -98,11 +98,19 @@ def draw(canvas: tk.Canvas, data: dict, scale: float) -> dict:
     cls = str(data.get("class") or "")
     canvas.create_rectangle(px(12), px(45), px(16), px(67), fill=RANKS.get(cls, "#3f9b4b"), outline="")
     canvas.create_text(px(24), px(56), text=cls.upper(), anchor="w", fill=TEXT, font=font(HEAD_FONT, 14))
-    tokens = data.get("tokens")
-    if tokens:
-        text = "бесплатно" if tokens == "бесплатно" else ("жетонов нет" if tokens == "0" else f"жетон {tokens}")
-        color = "#ff7a70" if tokens == "0" else MUTED
-        canvas.create_text(width - px(12), px(56), text=text, anchor="e", fill=color, font=font(BODY_FONT, 10))
+    # the tokens you have for this class, big: «54», as read over its button on the loadout screen
+    tokens = str(data.get("tokens") or "")
+    have = tokens.split("/")[0] if tokens and tokens[0].isdigit() else ""
+    if tokens == "бесплатно":
+        value, color = "БЕСПЛАТНО", TEXT
+    elif tokens == "0" or have == "0":
+        value, color = "0", "#ff7a70"
+    elif have:
+        value, color = have, "#c6fb33"
+    else:
+        value, color = "—", DIM
+    number = canvas.create_text(width - px(12), px(57), text=value, anchor="e", fill=color, font=font(HEAD_FONT, 16))
+    canvas.create_text(canvas.bbox(number)[0] - px(6), px(58), text="ЖЕТОНЫ", anchor="e", fill=MUTED, font=font(BODY_FONT, 8))
 
     # attempts and time in the cycle
     duty = state == "duty"

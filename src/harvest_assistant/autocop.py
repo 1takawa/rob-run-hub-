@@ -327,6 +327,7 @@ class AutocopRunner:
         on_feed: Callable[[dict], None] | None = None,
         hotkey: str = "",
         on_tokens: Callable[[dict], None] | None = None,
+        tokens: str | None = None,
     ) -> None:
         if selected_class not in SERVICE_CLASSES:
             raise ValueError("Выбери один из пяти классов службы.")
@@ -344,7 +345,7 @@ class AutocopRunner:
         self.hotkey = hotkey
         self.tries = 0
         self.refusals = 0
-        self.tokens: str | None = None
+        self.tokens: str | None = tokens if tokens != "0" else None   # known from the last time (the app remembers)
         self.started_at = time.time()
         self.ended_at: float | None = None
         self.state = "run"          # run: going round; wait: held back; done: joined; duty: was on duty already

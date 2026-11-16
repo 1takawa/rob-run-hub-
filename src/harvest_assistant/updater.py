@@ -2,7 +2,7 @@
 
 The hub folder is a git clone of https://github.com/1takawa/rob-run-hub-.git (branch main). A check fetches the branch
 and counts the commits this copy does not have; an update fast-forwards to them. Personal data (profiles/, the overlay's
-stats and settings) is not in git, so an update never touches it. run.bat installs new packages on the next start.
+stats and settings) is not in git, so an update never touches it. start.bat installs new packages on the next start.
 """
 
 from __future__ import annotations
@@ -110,8 +110,8 @@ def apply(folder: Path = PROJECT_DIR) -> tuple[bool, str]:
 
 
 def restart(folder: Path = PROJECT_DIR) -> None:
-    """Start the hub again through run.bat (it installs new packages); the new copy closes this one."""
-    subprocess.Popen(["cmd", "/c", "start", "", str(folder / "run.bat")], cwd=folder,
+    """Start the hub again through start.bat (it installs new packages); the new copy closes this one."""
+    subprocess.Popen(["cmd", "/c", "start", "", str(folder / "start.bat")], cwd=folder,
                      creationflags=NO_WINDOW if os.name == "nt" else 0)
 
 

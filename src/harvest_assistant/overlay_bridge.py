@@ -174,6 +174,9 @@ def launch_overlay() -> str | None:
     if running_overlay_pid() is not None:
         return None
     python = OVERLAY_DIR / ".venv" / "Scripts" / "pythonw.exe"
+    hub_python = OVERLAY_DIR.parent / ".venv" / "Scripts" / "pythonw.exe"
+    if not python.is_file() and hub_python.is_file() and (OVERLAY_DIR.parent / ".venv" / "requirements.sha").is_file():
+        python = hub_python   # start.bat put the overlay's packages into the hub's environment
     try:
         if python.is_file():
             subprocess.Popen(

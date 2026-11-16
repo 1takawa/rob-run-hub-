@@ -861,7 +861,8 @@ class HarvestAssistantApp:
 
             runner = AutocopRunner(self.screen, selected_class, on_status, on_finished,
                                    on_feed=write_autocop, hotkey=str(self.profile.autocop_hotkey or "").upper(),
-                                   on_tokens=on_tokens)
+                                   on_tokens=on_tokens,
+                                   tokens=(self._autocop_memory().get("tokens") or {}).get(selected_class))
             runner_ref[0] = runner
             self.autocop_runner = runner
             self.autocop_page.set_running(True)
