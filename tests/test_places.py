@@ -75,3 +75,63 @@ class Roles(unittest.TestCase):
         self.assertIsNone(watch.role)
         watch.see_log(["battle", "server:battle", "role:hubber"])
         self.assertIsNone(watch.role)          # in the motel there is no such role
+
+
+class CopCorner(unittest.TestCase):
+    def test_the_screen_is_taken_only_on_a_cop_shift(self) -> None:
+        taken = []
+
+        class Screen:
+            def is_target_open(self):
+                return True
+
+            def capture(self, *_a, **_k):
+                taken.append("full")
+                raise RuntimeError
+
+            def capture_corner(self, *_a):
+                taken.append("corner")
+                raise RuntimeError
+
+        class Seasons(_Seasons):
+            def roll_over(self):
+                pass
+
+            def add_playtime(self, _s):
+                pass
+
+        watch = GameWatcher(lambda: Screen(), Seasons(), log=_Log())
+        watch.see_log(["battle", "server:battle", "role:citizen"])
+        for _ in range(5):
+            watch._tick(2.0)
+        self.assertEqual(taken, [])                       # a citizen in Looty Bay: no screen at all
+        watch.see_log(["rolechange:cop"])
+        watch._tick(2.0)
+        watch._tick(2.0)                                  # the next look waits a minute
+        self.assertEqual(taken, ["corner"])
+
+    def test_the_corner_keeps_the_frame_proportions(self) -> None:
+        from unittest import mock
+
+        import numpy as np
+        from PIL import Image
+
+        from harvest_assistant import screen as screen_module
+
+        capture = screen_module.ScreenService.__new__(screen_module.ScreenService)
+        capture.background_control = True
+        capture.is_automation_ready = lambda: True
+        capture.target_client_screen_rect = lambda: (100, 50, 1100, 650)    # a 1000 x 600 game
+        grabbed = {}
+
+        def grab(left, top, width, height):
+            grabbed["bbox"] = (left, top, left + width, top + height)
+            return np.asarray(Image.new("RGB", (width, height), (200, 10, 10)))
+
+        with mock.patch.object(screen_module, "grab_region", grab):
+            frame = capture.capture_corner(0.62, 0.18)
+        self.assertEqual(grabbed["bbox"], (720, 50, 1100, 158))           # only the corner is copied
+        self.assertEqual(frame.shape, (600, 1000, 3))
+        self.assertEqual(int(frame[0, 999, 0]), 200)
+        self.assertEqual(int(frame[300, 500].sum()), 0)
+        self.assertTrue(np.all(frame[:108, 620:, 0] == 200))

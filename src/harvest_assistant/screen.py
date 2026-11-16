@@ -12,6 +12,48 @@ import pyautogui
 from PIL import ImageGrab
 
 
+def grab_region(left: int, top: int, width: int, height: int) -> np.ndarray:
+    """Copy only this rectangle of the desktop (RGB). PIL's grab copies the whole desktop and crops it afterwards:
+    for a small corner that is many times the work, so the rectangle is copied straight with GDI."""
+    gdi, user = ctypes.windll.gdi32, ctypes.windll.user32
+    gdi.CreateCompatibleBitmap.restype = wintypes.HBITMAP
+    gdi.CreateCompatibleDC.restype = wintypes.HDC
+    user.GetDC.restype = wintypes.HDC
+    gdi.SelectObject.argtypes = [wintypes.HDC, wintypes.HGDIOBJ]
+    gdi.DeleteObject.argtypes = [wintypes.HGDIOBJ]
+    gdi.DeleteDC.argtypes = [wintypes.HDC]
+    gdi.BitBlt.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                           wintypes.HDC, ctypes.c_int, ctypes.c_int, wintypes.DWORD]
+    gdi.GetDIBits.argtypes = [wintypes.HDC, wintypes.HBITMAP, wintypes.UINT, wintypes.UINT, ctypes.c_void_p,
+                              ctypes.c_void_p, wintypes.UINT]
+    user.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
+
+    class BITMAPINFOHEADER(ctypes.Structure):
+        _fields_ = [("biSize", wintypes.DWORD), ("biWidth", wintypes.LONG), ("biHeight", wintypes.LONG),
+                    ("biPlanes", wintypes.WORD), ("biBitCount", wintypes.WORD), ("biCompression", wintypes.DWORD),
+                    ("biSizeImage", wintypes.DWORD), ("biXPelsPerMeter", wintypes.LONG),
+                    ("biYPelsPerMeter", wintypes.LONG), ("biClrUsed", wintypes.DWORD), ("biClrImportant", wintypes.DWORD)]
+
+    screen_dc = user.GetDC(None)
+    memory_dc = gdi.CreateCompatibleDC(screen_dc)
+    bitmap = gdi.CreateCompatibleBitmap(screen_dc, width, height)
+    try:
+        old = gdi.SelectObject(memory_dc, bitmap)
+        SRCCOPY = 0x00CC0020
+        if not gdi.BitBlt(memory_dc, 0, 0, width, height, screen_dc, left, top, SRCCOPY):
+            raise OSError("BitBlt failed")
+        gdi.SelectObject(memory_dc, old)
+        header = BITMAPINFOHEADER(ctypes.sizeof(BITMAPINFOHEADER), width, -height, 1, 32, 0, 0, 0, 0, 0, 0)
+        buffer = np.empty((height, width, 4), dtype=np.uint8)
+        if gdi.GetDIBits(memory_dc, bitmap, 0, height, buffer.ctypes.data, ctypes.byref(header), 0) != height:
+            raise OSError("GetDIBits failed")
+    finally:
+        gdi.DeleteObject(bitmap)
+        gdi.DeleteDC(memory_dc)
+        user.ReleaseDC(None, screen_dc)
+    return np.ascontiguousarray(buffer[:, :, 2::-1])   # BGRA -> RGB
+
+
 class TargetWindowNotFound(RuntimeError):
     pass
 
@@ -144,6 +186,23 @@ class ScreenService:
             if self.is_target_foreground():
                 return
         raise TargetWindowNotForeground("Windows did not focus the configured game window")
+
+    def capture_corner(self, left: float, bottom: float) -> np.ndarray:
+        """Only the top right corner of the game (from ``left`` of the width, down to ``bottom`` of the height),
+        put into an otherwise black frame of the game's size: the readers keep their whole-frame proportions,
+        while the screen copy is a few percent of a full one."""
+        if self.background_control:
+            if not self.is_automation_ready():
+                raise TargetWindowNotForeground("Keep the game window visible and not minimized")
+        elif not self.is_target_foreground():
+            raise TargetWindowNotForeground("Focus the game window before screen recognition")
+        x0, y0, x1, y1 = self.target_client_screen_rect()
+        width, height = x1 - x0, y1 - y0
+        cut_x, cut_y = int(width * left), max(1, int(height * bottom))
+        corner = grab_region(x0 + cut_x, y0, width - cut_x, cut_y)
+        frame = np.zeros((height, width, 3), dtype=np.uint8)
+        frame[:corner.shape[0], cut_x:cut_x + corner.shape[1]] = corner[:, :width - cut_x]
+        return frame
 
     def capture(self, require_target_foreground: bool = True) -> np.ndarray:
         if self.background_control:

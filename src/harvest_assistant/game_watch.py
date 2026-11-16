@@ -34,8 +34,9 @@ from .seasons import SeasonStore
 logger = logging.getLogger(__name__)
 
 TICK = 2.0             # seconds between reads of Player.log (free: no screen)
-LOOK_EVERY = 6.0       # seconds between looks at the screen in a match (the duty shield)
-GONE_LOOKS = 3         # looks without the shield before a shift counts as ended
+LOOK_EVERY = 60.0      # seconds between looks at the duty shield — only on a cop shift (Player.log says when)
+CORNER = (0.62, 0.18)  # the look takes only the top right corner: from 62 % of the width, down to 18 % of the height
+GONE_LOOKS = 3         # ticks without the shield (or off the shift) before the shift is banked
 MENU_EVERY = 30.0      # seconds between readings of the server age in the main menu
 # the roles of the game in Player.log («Init role: citizen», «Role changed: citizen -> cop») -> the Discord card
 LOG_ROLES = {"citizen": "civilian", "robber": "criminal", "cop": "police"}
@@ -283,16 +284,28 @@ class GameWatcher(threading.Thread):
                     if self.seasons.correct_start(started) and self.on_change:
                         self.on_change()
             return
+        if self.role != "police":
+            # not a cop (Player.log says so): the screen is never taken; a shift that just ended is banked
+            self.on_duty = False
+            self.see_counter(False, None)
+            return
         if not open_ or now - self._look_at < LOOK_EVERY:
             return
         self._look_at = now
-        frame = self._capture(screen)
-        if frame is None:
-            self.on_duty = None
-            return
-        visible, value = read_duty_counter(frame, self.ocr)
-        self.on_duty = visible
-        self.see_counter(visible, value)
+        # two quick looks at the corner: a number counts only when both read it the same
+        for attempt in range(2):
+            try:
+                frame = screen.capture_corner(*CORNER)
+            except Exception:
+                self.on_duty = None
+                return   # the game is in the background: next time
+            visible, value = read_duty_counter(frame, self.ocr)
+            self.on_duty = visible
+            self.see_counter(visible, value)
+            if not visible or value is None:
+                return
+            if attempt == 0:
+                time.sleep(0.4)
 
     def stop(self) -> None:
         self.stop_event.set()
