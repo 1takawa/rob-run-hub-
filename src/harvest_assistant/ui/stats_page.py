@@ -150,6 +150,8 @@ class StatsPage(tk.Frame):
         self.overlay_stats = overlay_stats or OVERLAY_DIR / "stats.json"
         self.viewing: int | None = None     # a past season picked in the history; None: the current one
         self.session_roles = lambda: {}       # set by the app: seconds per role in this run of the game
+        self.server_clock = None              # set by the app: reads the server age in the main menu (once per state)
+        self.clock_note = tk.StringVar(value="")
         scroll = ScrollPage(self, max_width=980)
         scroll.pack(fill="both", expand=True)
         self.scroll = scroll
@@ -302,6 +304,11 @@ class StatsPage(tk.Frame):
         if is_current:
             button(row, "Изменить", lambda: self._edit_state(season)).pack(side="left")
             button(row, "Вайп раньше / новый штат", self._new_state).pack(side="left", padx=(6, 0))
+            if self.server_clock is not None and not season.get("clock_checked"):
+                # once per state: the bot reads «Время существования сервера» in the main menu and sets the start;
+                # after that the button is gone for this state
+                button(row, "Уточнить старт", self.server_clock, primary=True).pack(side="left", padx=(6, 0))
+                tk.Label(row, textvariable=self.clock_note, bg=STRIP, fg=MUTED, font=(BODY, 10)).pack(side="left", padx=(10, 0))
         else:
             button(row, "Изменить", lambda: self._edit_state(season)).pack(side="left")
         return card

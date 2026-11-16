@@ -164,3 +164,43 @@ class RoleTime(unittest.TestCase):
             self.assertEqual(watch.session_roles, {"civilian": 4.0, "criminal": 2.0})
             summary = SeasonStore.summary(seasons.get(season["id"]), [], [])
             self.assertEqual(summary["roles"], {"civilian": 4.0, "police": 0.0, "criminal": 2.0})
+
+
+class ServerClockButton(unittest.TestCase):
+    def test_the_button_is_shown_once_per_state(self) -> None:
+        import time as _time
+        import tkinter as tk
+
+        from harvest_assistant.seasons import SeasonStore
+        from harvest_assistant.stats import StatsStore
+        from harvest_assistant.ui.stats_page import StatsPage
+
+        try:
+            root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(str(exc))
+        root.withdraw()
+
+        def texts(widget):
+            found = []
+            for child in widget.winfo_children():
+                try:
+                    found.append(str(child.cget("text")))
+                except tk.TclError:
+                    pass
+                found += texts(child)
+            return found
+
+        try:
+            with tempfile.TemporaryDirectory() as folder:
+                seasons = SeasonStore(Path(folder) / "seasons.json")
+                season = seasons.start("06242", "rocky valley", _time.time() - 3600)
+                page = StatsPage(root, StatsStore(Path(folder) / "stats.json"), seasons, Path(folder) / "none.json")
+                page.server_clock = lambda: None
+                page.update_now()
+                self.assertIn("УТОЧНИТЬ СТАРТ", texts(page))
+                seasons.update(season["id"], clock_checked=True)     # what the server clock writes when it read the age
+                page.update_now()
+                self.assertNotIn("УТОЧНИТЬ СТАРТ", texts(page))
+        finally:
+            root.destroy()

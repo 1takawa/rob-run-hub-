@@ -267,6 +267,8 @@ class HarvestAssistantApp:
         self.dashboard_page = DashboardPage(self.page_host, dashboard_callbacks, self._on_table_selected, self.profile, self.vision,
                                             self.timer_pause_var, self.stats, tables_parent=self.plantation_page.tables_host)
         self.stats_page = StatsPage(self.page_host, self.stats, self.seasons)
+        self.stats_page.server_clock = self._calibrate_server_start
+        self.stats_page.update_now()
         self.rob_run_info_page = ROBRunInfoPage(self.page_host)
         self.lab_page = LabPage(
             self.page_host, self.profile, self._save_laboratory,
@@ -299,7 +301,6 @@ class HarvestAssistantApp:
                 "toggle_table_vision": lambda: self._set_table_vision(self.settings_page.table_vision_var.get()),
                 "scan_reconnect": self._scan_reconnect_screen,
                 "toggle_auto": lambda: self._set_auto(self.settings_page.auto_var.get()),
-                "server_clock": self._calibrate_server_start,
                 "visual_test": self._start_visual_test,
                 "approach_record": self._toggle_approach_recording,
                 "taught_list": lambda: self.taught_store.load_runs(),
@@ -612,20 +613,20 @@ class HarvestAssistantApp:
             self._show_vpn_hint("Не удалось вернуться на сервер.")
 
     def _calibrate_server_start(self) -> None:
-        """Settings → «Уточнить»: read the server's age in the main menu and set the start of the current state."""
+        """Statistics → «Уточнить старт» (once per state): read the server's age in the main menu and set the start of the current state."""
         from .server_clock import ServerClock
 
         if getattr(self, "_server_clock", None) is not None and self._server_clock.is_alive():
             self._server_clock.stop_event.set()
-            self.settings_page.server_clock_note.set("Остановлено.")
+            self.stats_page.clock_note.set("Остановлено.")
             return
         if (self.runner is not None and self.runner.worker_alive) or (
                 self.autocop_runner is not None and self.autocop_runner.worker_alive):
-            self.settings_page.server_clock_note.set("Сначала останови сбор или автокоп.")
+            self.stats_page.clock_note.set("Сначала останови сбор или автокоп.")
             return
 
         def note(text: str) -> None:
-            self._post_to_ui(lambda: (self.settings_page.server_clock_note.set(text), self._set_status(text)))
+            self._post_to_ui(lambda: (self.stats_page.clock_note.set(text), self._set_status(text)))
 
         def done(ok: bool, text: str) -> None:
             note(text)

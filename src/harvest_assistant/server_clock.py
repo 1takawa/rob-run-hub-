@@ -169,7 +169,7 @@ class ServerClock(threading.Thread):
         started = time.time() - age
         season = self.seasons.current()
         if season is not None:
-            self.seasons.update(season["id"], started_at=started, auto_start=True)
+            self.seasons.update(season["id"], started_at=started, auto_start=True, clock_checked=True)
         self.seasons.data["last_server_start"] = started
         self.seasons.save()
         hours, minutes = int(age // 3600), int(age % 3600 // 60)

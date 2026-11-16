@@ -123,15 +123,6 @@ class SettingsPage(tk.Frame):
                          "нажмёт RUN и дождётся появления персонажа. Вылет он узнаёт по журналу игры (Player.log).\n\n"
                          "После входа маршрут начнётся сначала, поэтому персонаж должен появляться там, "
                          "где записан старт.").pack(side="right", padx=(0, 12))
-        control = settings_row(card, "Старт сервера", "Узнать, сколько живёт сервер, и выставить старт текущего штата.")
-        PillButton(control, "Уточнить", self.callbacks["server_clock"], style="secondary", padx=16, height=34, size=9).pack(side="right")
-        HelpTip(control, "Если игра закрыта — бот её запустит, если свёрнута — развернёт. По журналу игры (Player.log) он "
-                         "видит, где ты: в игре — нажмёт Esc → «Выйти» → «В главное меню». В главном меню прочитает "
-                         "«Время существования сервера» над кнопкой RUN, выставит старт штата (вайп через 7 дней) "
-                         "и нажмёт RUN, чтобы вернуть тебя в игру.").pack(side="right", padx=(0, 12))
-        self.server_clock_note = tk.StringVar(value="")
-        label(card.body, "", size=9, color="muted", bg=card.fill, textvariable=self.server_clock_note, justify="left",
-              wraplength=560).pack(anchor="w", pady=(8, 0))
 
     def _build_discord_status(self, body: tk.Frame) -> None:
         card = self._group(body, "Discord Rich Presence")
