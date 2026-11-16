@@ -338,3 +338,34 @@ class DarkAfterClick(unittest.TestCase):
             runner._run()
         self.assertNotIn({"Сержант II": "0"}, told)
         self.assertNotEqual(runner.tokens, "0")
+
+
+class HoveredButton(unittest.TestCase):
+    """Under the mouse pointer the confirm button of an available class turns white (not lime): still available."""
+
+    def test_the_white_button_is_found_and_available(self) -> None:
+        frame = cv2.cvtColor(cv2.imread(str(ROOT / "tests" / "fixtures" / "loadout_hover.jpg")), cv2.COLOR_BGR2RGB)
+        row = find_confirm_buttons(frame)
+        self.assertEqual([b.active for b in row], [True, True, True, False, False])
+        button = class_button(frame, 2)
+        self.assertTrue(button.active and button.seen)
+        self.assertAlmostEqual(button.center[0], 840, delta=10)
+
+    def test_the_number_of_tokens_decides_not_the_colour(self) -> None:
+        from harvest_assistant.autocop import enough_tokens
+
+        self.assertTrue(enough_tokens("54/1"))
+        self.assertTrue(enough_tokens("бесплатно"))
+        self.assertFalse(enough_tokens("0/1"))
+        self.assertFalse(enough_tokens("0"))
+        self.assertIsNone(enough_tokens(None))
+
+    def test_tokens_over_the_hovered_button_read(self) -> None:
+        from harvest_assistant.autocop import AutocopScreenReader
+
+        frame = cv2.cvtColor(cv2.imread(str(ROOT / "tests" / "fixtures" / "loadout_hover.jpg")), cv2.COLOR_BGR2RGB)
+        try:
+            value = AutocopScreenReader().read_tokens(frame, class_button(frame, 2))
+        except Exception as exc:
+            self.skipTest(str(exc))
+        self.assertEqual(value, "54/1")

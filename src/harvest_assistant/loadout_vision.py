@@ -25,7 +25,8 @@ class ConfirmButton:
     y: int
     width: int
     height: int
-    active: bool            # lime: the class can be confirmed
+    active: bool            # lime, or white under the pointer: the class can be confirmed
+    seen: bool = True       # False: not on the picture, its place only follows from the others
 
     @property
     def center(self) -> tuple[int, int]:
@@ -56,7 +57,10 @@ def find_confirm_buttons(frame: np.ndarray) -> list[ConfirmButton]:
     height, width = frame.shape[:2]
     lime = cv2.inRange(hsv, (LIME_HUE[0], LIME_MIN_SATURATION, LIME_MIN_VALUE), (LIME_HUE[1], 255, 255))
     black = cv2.inRange(hsv, (0, 0, 0), (179, 255, BLACK_MAX_VALUE))
+    # under the mouse pointer a confirm button of an available class turns white
+    white = cv2.inRange(hsv, (0, 0, 215), (179, 45, 255))
     candidates = [ConfirmButton(*box, True) for box in _boxes(lime, width)]
+    candidates += [ConfirmButton(*box, True) for box in _boxes(white, width)]
     candidates += [ConfirmButton(*box, False) for box in _boxes(black, width)]
     if len(candidates) < 3:
         return []
@@ -93,7 +97,7 @@ def class_button(frame: np.ndarray, index: int) -> ConfirmButton | None:
             if index in slots:
                 return row[slots.index(index)]
             gap = row[0]
-            return ConfirmButton(round(row[0].x + index * pitch), gap.y, gap.width, gap.height, False)
+            return ConfirmButton(round(row[0].x + index * pitch), gap.y, gap.width, gap.height, False, seen=False)
     return None
 
 

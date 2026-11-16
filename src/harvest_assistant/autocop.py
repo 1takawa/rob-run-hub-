@@ -300,6 +300,21 @@ def save_memory(path, memory: dict) -> None:
     os.replace(temporary, path)
 
 
+def enough_tokens(text: str | None) -> bool | None:
+    """«54/1» -> True, «0/1» -> False, «бесплатно» -> True, unknown -> None."""
+    if not text:
+        return None
+    if text in ("бесплатно", "есть"):
+        return True
+    if text == "0":
+        return False
+    have, _slash, need = text.partition("/")
+    try:
+        return int(have) >= int(need or 1)
+    except ValueError:
+        return None
+
+
 class AutocopRunner:
     """Wait for active game prompts, join the selected class, and retry service limits."""
 
@@ -390,24 +405,29 @@ class AutocopRunner:
             self._logger.debug("autocop trace failed", exc_info=True)
 
     def _read_all_tokens(self, frame: np.ndarray) -> None:
+        """What every class costs, read over its button: «бесплатно», «54/1» (have / need). Each is tried twice; a
+        black button whose number does not read (the red «0/1») counts as no tokens, except the chosen one, which may
+        just be dark for a moment after a click."""
         found: dict[str, str] = {}
         for index, name in enumerate(SERVICE_CLASSES):
             button = class_button(frame, index)
             if button is None:
                 continue
-            if not button.active:
-                if name != self.selected_class:   # the chosen one was just clicked: dark for a moment, not «no tokens»
-                    found[name] = "0"   # a black button: no token for it (its red «0/1» does not read)
-                continue
-            try:
-                value = self.reader.read_tokens(frame, button)
-            except Exception:
-                self._logger.debug("token read failed", exc_info=True)
-                value = None
+            value = None
+            for _attempt in range(2):
+                try:
+                    value = self.reader.read_tokens(frame, button)
+                except Exception:
+                    self._logger.debug("token read failed", exc_info=True)
+                if value:
+                    break
             if value:
                 found[name] = value
+            elif button.seen and not button.active and name != self.selected_class:
+                found[name] = "0"
         if self.selected_class in found:
             self.tokens = found[self.selected_class]
+        self._logger.info("autocop: tokens read %s", found)
         self._tell_tokens(found)
 
     def _tell_tokens(self, found: dict) -> None:
@@ -462,7 +482,15 @@ class AutocopRunner:
                     up, button = self.reader.class_screen(frame, self.selected_class)
                     now = time.monotonic()
                     if up:
-                        if button is not None and button.active:
+                        if not self._all_read and (button is None or not button.active):
+                            # the first look at the class screen and the chosen class does not look available:
+                            # read what every class costs before judging (a hovered button is white, not lime)
+                            self._all_read = True
+                            self._tokens_at = now
+                            self._read_all_tokens(frame)
+                        clickable = button is not None and (button.active or not button.seen
+                                                            or enough_tokens(self.tokens) is True)
+                        if clickable:
                             dark_since = None
                             if self.tokens == "0":   # it is lit: there are tokens after all, read how many soon
                                 self.tokens, self._tokens_at = None, 0.0
@@ -490,7 +518,7 @@ class AutocopRunner:
                             # Only a button that stays dark, with no click of ours, means the class is not available.
                             dark_since = dark_since or now
                             lasting = now - dark_since > 2.5 and now - last_click > 2.5
-                            if button is None:
+                            if button is None or not button.seen:
                                 # the class screen is up but not all five buttons are seen: something covers the
                                 # game (another window) or the picture is unusual. Never guess which one to press.
                                 self._status(f"Не вижу все пять кнопок классов: окно игры чем-то закрыто? "
@@ -498,7 +526,7 @@ class AutocopRunner:
                                 self._show("wait", "confirm", "Не вижу кнопку класса: игра закрыта окном?" if lasting
                                            else "Жду ответа игры", "wait")
                             else:
-                                if lasting:
+                                if lasting and enough_tokens(self.tokens) is not True:
                                     self.tokens = "0"
                                     self._tell_tokens({self.selected_class: "0"})
                                 self._status(f"Жду светлую кнопку «Подтвердить» у класса «{self.selected_class}».")
