@@ -199,6 +199,10 @@ class HarvestAssistantApp:
             item = NavItem(nav, text, lambda value=page_id: self._show_page(value), badge=badge)
             item.pack(fill="x", pady=2)
             self._nav_buttons[page_id] = item
+        from .ui.update_box import UpdateBox
+
+        self.update_box = UpdateBox(rail, self._post_to_ui, self._on_close)
+        self.update_box.pack(side="bottom", fill="x", padx=22, pady=(0, 22))
 
         main = tk.Frame(shell, bg=COLORS["bg"])
         main.pack(side="left", fill="both", expand=True)
