@@ -42,12 +42,14 @@ class Places(unittest.TestCase):
             watch.see_log(["realm"])
             self.assertEqual(watch.location_key, "map")
             watch.see_log(PlayerLog.parse(LINES[1:]))
-            self.assertEqual(watch.place, "citizen/shooter")
+            self.assertEqual(watch.place, "citizen")
+            self.assertEqual(watch.location_key, "looty_bay")   # the civilian role exists only in Looty Bay
+            watch.see_log(["battle", "server:battle", "role:hubber"])
             self.assertIsNone(watch.location_key)          # not named yet: the card says «Локация скрыта»
-            places.set("citizen/shooter", "events_center")
-            self.assertEqual(PlaceNames(Path(folder) / "places.json").get("citizen/shooter"), "events_center")
+            places.set("hubber", "events_center")
+            self.assertEqual(PlaceNames(Path(folder) / "places.json").get("hubber"), "events_center")
             self.assertEqual(watch.location_key, "events_center")
             watch.see_log(["battle", "server:battle", "role:settler"])
-            self.assertEqual(watch.location_key, "plot")    # the own plot is known from the start
+            self.assertIsNone(watch.location_key)           # a settlement is never shown
             watch.see_log(["lobby"])
             self.assertIsNone(watch.location_key)

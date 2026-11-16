@@ -27,7 +27,6 @@ LOCATION_ASSETS = {
     "prison": ("Тюрьма", "location_prison"),
     "events_center": ("Центр событий", "location_map"),
     "city": ("Город", "location_map"),
-    "plot": ("На участке", "location_hidden"),     # whose and where is not said
 }
 HIDDEN_LOCATION_ASSET = "location_hidden"
 

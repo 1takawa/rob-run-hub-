@@ -141,7 +141,7 @@ class SettingsPage(tk.Frame):
         card = self._group(body, "Discord Rich Presence")
         control = settings_row(card, "Показывать активность в Discord", "Выключение очищает карточку и закрывает соединение.", first=True)
         Toggle(control, self.discord_enabled_var, command=self._save_discord_settings).pack(side="right")
-        label(card.body, "Статус игры и место показываются всегда. Свой участок — просто «На участке», без адреса; "
+        label(card.body, "Статус игры и место показываются всегда. Поселения (участки) — «Локация скрыта»; "
               "координаты не передаются. Остальное включается отдельно.",
               size=9, color="muted", bg=card.fill, wraplength=560, justify="left").pack(anchor="w")
         label(card.body, "", size=9, color="muted", bg=card.fill, textvariable=self.discord_status).pack(
@@ -153,7 +153,8 @@ class SettingsPage(tk.Frame):
                                         state="disabled", width=16)
         self.place_combo.pack(side="right")
         self.place_combo.bind("<<ComboboxSelected>>", lambda _e: self._name_place())
-        label(control, "", size=9, color="green", bg=card.fill, textvariable=self.place_note).pack(side="right", padx=(0, 10))
+        self.place_note_label = label(control, "", size=9, color="green", bg=card.fill, textvariable=self.place_note)
+        self.place_note_label.pack(side="right", padx=(0, 10))
         options = (
             ("Полный штат и название", "Если выключить: EU-?????? / NA-?????? без названия штата.", self.discord_show_server_var),
             ("Роль персонажа", "Берётся автоматически из игры.", self.discord_show_role_var),
@@ -188,11 +189,13 @@ class SettingsPage(tk.Frame):
         self._place_code = code
         if code is None:
             self.place_note.set(name or "")
+            self.place_note_label.configure(fg=COLORS["muted"])
             self.place_combo.configure(state="disabled")
             if self.place_var.get():
                 self.place_var.set("")
             return
-        self.place_note.set("НОВОЕ — НАЗОВИ" if name is None else "")
+        self.place_note.set(f"{code} · НОВОЕ — НАЗОВИ" if name is None else code)
+        self.place_note_label.configure(fg=COLORS["green"] if name is None else COLORS["muted"])
         self.place_combo.configure(state="readonly")
         if self.focus_get() is not self.place_combo:
             self.place_var.set(PLACE_CHOICES.get(name or "", ""))
@@ -202,7 +205,8 @@ class SettingsPage(tk.Frame):
         callback = self.callbacks.get("place_named")
         if key and self._place_code and callback is not None:
             callback(self._place_code, key)
-            self.place_note.set("")
+            self.place_note.set(self._place_code)
+            self.place_note_label.configure(fg=COLORS["muted"])
 
     def _build_route(self, body: tk.Frame) -> None:
         card = self._group(body, "Путь до столов")
