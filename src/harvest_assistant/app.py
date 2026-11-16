@@ -182,6 +182,7 @@ class HarvestAssistantApp:
         nav = tk.Frame(rail, bg=COLORS["rail"])
         nav.pack(fill="x", padx=12)
         for page_id, text, badge in (
+            ("home", "Главная", ""),
             ("launch", "Запуск", ""),
             ("tables", "Плантация", ""),
             ("lab", "Лаборатория", "в разработке"),
@@ -281,7 +282,11 @@ class HarvestAssistantApp:
         self.window_title_var = self.settings_page.window_title_var
         self.clock_mode_var = self.settings_page.clock_mode_var
         self.hotkey_vars = self.settings_page.hotkey_vars
+        from .ui.home_page import HomePage
+
+        self.home_page = HomePage(self.page_host, self._home_state)
         self.pages = {
+            "home": self.home_page,
             "launch": self.dashboard_page,
             "tables": self.plantation_page,
             "lab": self.lab_page,
@@ -292,7 +297,7 @@ class HarvestAssistantApp:
         }
         for page in self.pages.values():
             page.place(relx=0, rely=0, relwidth=1, relheight=1)
-        self._show_page("launch")
+        self._show_page("home")
         self._update_hotkey_help()
 
     @staticmethod
@@ -324,6 +329,21 @@ class HarvestAssistantApp:
             self._set_status(self._last_snapshot.reason or "Автосбор остановлен.")
         if page_id == "stats":
             self.stats_page.refresh()
+        if page_id == "home":
+            self.home_page.refresh()
+
+    def _home_state(self) -> dict:
+        """What «Главная» shows besides the news: the main keys, the state of the season, the recorded runs."""
+        profile = self.profile
+        season = self.seasons.current()
+        left = 0.0
+        if season is not None:
+            left = max(0.0, season["started_at"] + 7 * 86400 - time.time())
+        return {
+            "hotkeys": [(profile.pause_hotkey, "старт / пауза"), (profile.stop_hotkey, "стоп"),
+                        (profile.approach_hotkey, "записать путь до столов"), (profile.autocop_hotkey, "автокоп")],
+            "season": season, "wipe_left": left, "runs": len(self.taught_store.load_runs()),
+        }
 
     def _apply_game_window(self) -> None:
         title = self.window_title_var.get().strip()

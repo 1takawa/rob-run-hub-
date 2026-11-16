@@ -181,7 +181,21 @@ class SettingsPage(tk.Frame):
               wraplength=560).pack(anchor="w", pady=(10, 0))
 
     def _build_keys(self, body: tk.Frame) -> None:
-        card = self._group(body, "Горячие клавиши")
+        from .dashboard_page import Collapsible, chevron
+
+        head = tk.Frame(body, bg=COLORS["bg"], cursor="hand2")
+        head.pack(fill="x", padx=6, pady=(0, 8))
+        title = label(head, "Горячие клавиши", size=12, font=FONT_SEMI, color="muted")
+        title.pack(side="left")
+        arrow = tk.Label(head, image=chevron(0), bg=COLORS["bg"], cursor="hand2")
+        arrow.pack(side="left", padx=(6, 0))
+        fold = Collapsible(body, COLORS["bg"], on_progress=lambda p: arrow.configure(image=chevron(p)))
+        fold.pack(fill="x", pady=(0, 26))
+        for widget in (head, title, arrow):
+            widget.bind("<ButtonPress-1>", lambda _e: fold.toggle())
+        self.keys_fold = fold
+        card = Card(fold.inner, padding=(26, 20), radius=20)
+        card.pack(fill="x")
         for index, (title, attribute) in enumerate(self.HOTKEYS):
             control = settings_row(card, title, first=index == 0)
             ttk.Entry(control, textvariable=self.hotkey_vars[attribute], width=12).pack()
