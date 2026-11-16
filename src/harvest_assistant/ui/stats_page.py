@@ -156,7 +156,7 @@ class StatsPage(tk.Frame):
         self.content.pack(fill="x")
         self._signature: tuple | None = None
         self.refresh()
-        self.after(20000, self._tick)
+        self.after(self.EVERY_MS, self._tick)
 
     # ---- data ---------------------------------------------------------------------------------------------------
 
@@ -170,12 +170,18 @@ class StatsPage(tk.Frame):
     def _summary(self, season: dict) -> dict:
         return SeasonStore.summary(season, list(self.stats.data.get("events", [])), self._combat_sessions())
 
+    EVERY_MS = 15 * 60 * 1000   # the tab refreshes itself every 15 minutes, or with «Обновить»
+
+    def update_now(self) -> None:
+        self._signature = None
+        self.refresh()
+
     def _tick(self) -> None:
         try:
             if self.winfo_viewable():
                 self.refresh()
         finally:
-            self.after(20000, self._tick)
+            self.after(self.EVERY_MS, self._tick)
 
     # ---- drawing ------------------------------------------------------------------------------------------------
 
@@ -234,9 +240,12 @@ class StatsPage(tk.Frame):
         bar.create_polygon(0, 0, 196, 0, 184, 40, 0, 40, fill=LIME, outline="")
         bar.create_text(14, 20, text="СТАТИСТИКА", anchor="w", fill=INK, font=(HEAD, 22))
         bar.create_text(208, 20, text="штат, заработок и личное за сезон", anchor="w", fill=MUTED, font=(BODY, 11))
+        tools = tk.Frame(root, bg=COLORS["bg"])
+        tools.place(in_=bar, relx=1.0, x=-2, rely=0.5, anchor="e")
+        tk.Label(tools, text=time.strftime("обновлено %H:%M"), bg=COLORS["bg"], fg=MUTED, font=(BODY, 10)).pack(side="left", padx=(0, 8))
+        button(tools, "Обновить", self.update_now).pack(side="left")
         if self.viewing is not None:
-            back = button(root, "← к актуальному штату", self._back)
-            back.place(in_=bar, relx=1.0, x=-2, rely=0.5, anchor="e")
+            button(tools, "← к актуальному штату", self._back).pack(side="left", padx=(6, 0))
 
     def _empty(self, root: tk.Misc) -> None:
         box = Box(root)

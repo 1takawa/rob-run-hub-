@@ -671,8 +671,7 @@ class HarvestAssistantApp:
         # the season statistics: time in a match, the cop's salary, the server age from the main menu
         from .game_watch import GameWatcher
 
-        self.game_watch = GameWatcher(lambda: self.screen, self.seasons,
-                                      lambda: self._post_to_ui(self.stats_page.refresh))
+        self.game_watch = GameWatcher(lambda: self.screen, self.seasons)   # the tab refreshes itself (button / 15 min)
         self.game_watch.start()
 
     def _on_reconnect_event(self, kind: str, text: str) -> None:
@@ -1833,8 +1832,6 @@ class HarvestAssistantApp:
         self._refresh_rows()
         self._publish_overlay_feed()
         self._sync_overlay_edit_mode()
-        if getattr(self, "_current_page", "") == "stats":
-            self.stats_page.refresh()
         self.overlay_page.refresh(overlay_bridge.running_overlay_pid() is not None, self.profile)
         self.root.after(1000, self._tick)
 
