@@ -15,15 +15,15 @@ from PIL import Image, ImageDraw, ImageTk
 COLORS = {
     "bg": "#0c0c0e",
     "rail": "#0c0c0e",
-    "surface": "#151517",
-    "surface_alt": "#1c1c1f",
-    "surface_hi": "#242428",
-    "border": "#2a2a2e",
-    "text": "#f5f5f7",
-    "muted": "#8e8e93",
-    "faint": "#5b5b61",
-    "green": "#c7f36a",
-    "green_dark": "#1f2a12",
+    "surface": "#1b1b1a",
+    "surface_alt": "#141413",
+    "surface_hi": "#262624",
+    "border": "#2c2c2a",
+    "text": "#e9e9e4",
+    "muted": "#8d8d86",
+    "faint": "#5f5f59",
+    "green": "#c6fb33",
+    "green_dark": "#22251a",
     "violet": "#a78bfa",
     "violet_dark": "#241f3f",
     "red": "#ff6b72",
@@ -33,9 +33,11 @@ COLORS = {
     "pkg_green": "#46c46a",
 }
 
-FONT = "Segoe UI"
-FONT_SEMI = "Segoe UI Semibold"
-FONT_LIGHT = "Segoe UI Light"
+FONT = "Bahnschrift"
+FONT_SEMI = "Bahnschrift SemiBold"
+FONT_LIGHT = "Bahnschrift Light"
+HEAD = "Bahnschrift SemiBold Condensed"   # titles, buttons, tabs: the condensed type of the game
+INK = "#141414"                          # text on lime
 
 
 def blend(color_a: str, color_b: str, amount: float) -> str:
@@ -128,32 +130,28 @@ def caption(parent: tk.Misc, text: str, bg: str | None = None) -> tk.Label:
 
 
 def page_header(parent: tk.Misc, title: str, subtitle: str = "") -> tk.Frame:
+    """The title of a tab: a slanted lime tab with the name, the subtitle beside it."""
     header = tk.Frame(parent, bg=COLORS["bg"])
-    label(header, title, size=26, font=FONT_SEMI).pack(anchor="w")
+    canvas = tk.Canvas(header, bg=COLORS["bg"], highlightthickness=0, height=40)
+    canvas.pack(fill="x")
+    name = canvas.create_text(14, 20, text=title.upper(), anchor="w", fill=INK, font=(HEAD, 22))
+    right = canvas.bbox(name)[2] + 24
+    canvas.tag_raise(name, canvas.create_polygon(0, 0, right, 0, right - 12, 40, 0, 40, fill=COLORS["green"], outline=""))
     if subtitle:
-        label(header, subtitle, size=10, color="muted").pack(anchor="w", pady=(2, 0))
+        canvas.create_text(right + 12, 20, text=subtitle.lower(), anchor="w", fill=COLORS["muted"], font=(FONT, 11))
     return header
 
 
 class Card(tk.Frame):
-    """Rounded surface. Put children into ``card.body``."""
+    """A flat dark plate with a hairline edge (the look of the game). Put children into ``card.body``."""
 
-    def __init__(self, parent: tk.Misc, *, padding: tuple[int, int] = (24, 20), radius: int = 18,
+    def __init__(self, parent: tk.Misc, *, padding: tuple[int, int] = (24, 20), radius: int = 0,
                  fill: str | None = None) -> None:
-        super().__init__(parent, bg=parent.cget("bg"))
         self._fill = fill or COLORS["surface"]
-        self._radius = radius
-        self._shape = tk.Canvas(self, bg=parent.cget("bg"), highlightthickness=0, bd=0)
-        self._shape.place(x=0, y=0, relwidth=1, relheight=1)
+        super().__init__(parent, bg=self._fill, highlightthickness=1, highlightbackground=COLORS["border"])
         self.body = tk.Frame(self, bg=self._fill)
-        self.body.grid(row=0, column=0, sticky="nsew", padx=padding[0], pady=padding[1])
+        self.body.grid(row=0, column=0, sticky="nsew", padx=max(14, padding[0] - 8), pady=max(10, padding[1] - 6))
         self.columnconfigure(0, weight=1)
-        self.bind("<Configure>", self._redraw)
-
-    def _redraw(self, event: tk.Event) -> None:
-        self._shape.delete("all")
-        self._image = shape_image(event.width, event.height, self._radius, self._fill)
-        self._shape.create_image(0, 0, anchor="nw", image=self._image)
 
     @property
     def fill(self) -> str:
@@ -168,9 +166,9 @@ class PillButton(tk.Canvas):
     """Pill button: primary (accent), secondary (filled grey) or ghost (text only)."""
 
     STYLES = {
-        "primary": ("green", "#d6f78c", "#b0dc55", "#12180a"),
-        "secondary": ("surface_hi", "#2f2f34", "#26262a", "text"),
-        "ghost": (None, "#1f1f22", "#26262a", "muted"),
+        "primary": ("green", "#d6ff6a", "#a8d82a", INK),
+        "secondary": ("surface", "#262624", "#111110", "text"),
+        "ghost": (None, "#1f1f1d", "#262624", "muted"),
         "danger": (None, "#2a1517", "#341a1d", "red"),
     }
 
@@ -185,7 +183,7 @@ class PillButton(tk.Canvas):
         self._size = size
         self._enabled = True
         self._state = "idle"
-        self._font = (FONT_SEMI, size)
+        self._font = (HEAD, size + 2)
         self.bind("<Enter>", lambda _e: self._set_state("hover"))
         self.bind("<Leave>", lambda _e: self._set_state("idle"))
         self.bind("<ButtonPress-1>", lambda _e: self._set_state("press"))  # feedback on press, not on release
@@ -207,14 +205,15 @@ class PillButton(tk.Canvas):
 
     def _render(self) -> None:
         import tkinter.font as tkfont
-        width = tkfont.Font(font=self._font).measure(self._text) + self._padx * 2
+        text = self._text.upper()
+        width = tkfont.Font(font=self._font).measure(text) + self._padx * 2
         self.configure(width=width)
         self.delete("all")
         fill, text_color = self._colors()
-        if fill != self.master.cget("bg"):
-            self._image = shape_image(width, self._height, self._height / 2, fill)
-            self.create_image(0, 0, anchor="nw", image=self._image)
-        self.create_text(width / 2, self._height / 2, text=self._text, fill=text_color, font=self._font)
+        edge = {"secondary": "#3a3a37", "primary": fill}.get(self._style)
+        if fill != self.master.cget("bg") or edge:
+            self.create_rectangle(0, 0, width - 1, self._height - 1, fill=fill, outline=edge or fill)
+        self.create_text(width / 2, self._height / 2, text=text, fill=text_color, font=self._font)
         self.configure(cursor="hand2" if self._enabled else "arrow")
 
     def _set_state(self, state: str) -> None:
@@ -344,11 +343,12 @@ class Segmented(tk.Frame):
 
     def __init__(self, parent: tk.Misc, variable: tk.StringVar, options: list[tuple[str, str]],
                  command: Callable[[], None] | None = None) -> None:
-        super().__init__(parent, bg=COLORS["surface_hi"], padx=3, pady=3)
+        super().__init__(parent, bg=COLORS["surface"], padx=2, pady=2, highlightthickness=1,
+                         highlightbackground=COLORS["border"])
         self._var, self._command = variable, command
         self._buttons: dict[str, tk.Label] = {}
         for value, text in options:
-            button = tk.Label(self, text=text, font=(FONT_SEMI, 9), padx=14, pady=6, cursor="hand2")
+            button = tk.Label(self, text=text.upper(), font=(HEAD, 11), padx=14, pady=5, cursor="hand2")
             button.pack(side="left")
             button.bind("<ButtonPress-1>", lambda _e, v=value: self._choose(v))
             self._buttons[value] = button
@@ -363,8 +363,8 @@ class Segmented(tk.Frame):
     def _paint(self) -> None:
         for value, button in self._buttons.items():
             selected = value == self._var.get()
-            button.configure(bg=COLORS["bg"] if selected else COLORS["surface_hi"],
-                             fg=COLORS["text"] if selected else COLORS["muted"])
+            button.configure(bg=COLORS["green"] if selected else COLORS["surface"],
+                             fg=INK if selected else COLORS["muted"])
 
 
 class ChipToggle(tk.Canvas):

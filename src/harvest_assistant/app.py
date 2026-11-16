@@ -276,6 +276,7 @@ class HarvestAssistantApp:
                 "toggle_table_vision": lambda: self._set_table_vision(self.settings_page.table_vision_var.get()),
                 "scan_reconnect": self._scan_reconnect_screen,
                 "toggle_auto": lambda: self._set_auto(self.settings_page.auto_var.get()),
+                "server_clock": self._calibrate_server_start,
                 "visual_test": self._start_visual_test,
                 "approach_record": self._toggle_approach_recording,
                 "taught_list": lambda: self.taught_store.load_runs(),
@@ -576,6 +577,33 @@ class HarvestAssistantApp:
             self.logger.warning("Reconnect failed: %s", text)
             self._set_status(text)
             self._show_vpn_hint("Не удалось вернуться на сервер.")
+
+    def _calibrate_server_start(self) -> None:
+        """Settings → «Уточнить»: read the server's age in the main menu and set the start of the current state."""
+        from .server_clock import ServerClock
+
+        if getattr(self, "_server_clock", None) is not None and self._server_clock.is_alive():
+            self._server_clock.stop_event.set()
+            self.settings_page.server_clock_note.set("Остановлено.")
+            return
+        if (self.runner is not None and self.runner.worker_alive) or (
+                self.autocop_runner is not None and self.autocop_runner.worker_alive):
+            self.settings_page.server_clock_note.set("Сначала останови сбор или автокоп.")
+            return
+
+        def note(text: str) -> None:
+            self._post_to_ui(lambda: (self.settings_page.server_clock_note.set(text), self._set_status(text)))
+
+        def done(ok: bool, text: str) -> None:
+            note(text)
+            self._post_to_ui(self.stats_page.update_now)
+
+        stop = threading.Event()
+        self._server_clock = ServerClock(lambda: self.screen, lambda: InputDriver(self.screen, stop), self.seasons,
+                                         note, done)
+        self._server_clock.stop_event = stop
+        self._server_clock.start()
+        note("Начинаю…")
 
     KICKS_FOR_HINT = 3   # thrown out this many times within an hour: the VPN hint shows
 
@@ -1494,7 +1522,9 @@ class HarvestAssistantApp:
         else:
             window_status = "Открой игру и проверь заголовок"
         self.window_status_var.set(window_status)
-        self.game_connection_var.set(window_status)
+        # the side menu is narrow: a short word there, the full hint in Settings
+        self.game_connection_var.set({"Окно не привязано": "Окно не привязано", "Игра найдена": "Игра найдена"}.get(
+            window_status, "Игра не найдена"))
         self.dashboard_page.refresh(
             snapshot,
             self.profile.tables,

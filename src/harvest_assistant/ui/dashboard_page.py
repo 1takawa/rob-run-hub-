@@ -105,11 +105,11 @@ class DashboardPage(tk.Frame):
 
         grid = tk.Frame(body, bg=COLORS["bg"])
         grid.pack(fill="x", pady=(0, 34))
-        grid.columnconfigure(1, weight=1)
+        grid.columnconfigure(0 if tables_parent is not None else 1, weight=1)   # alone on «Запуск»: full width
 
         # --- left: next harvest, one-line package counters, foldable money details, start
         left = Card(grid, padding=(28, 24), radius=22)
-        left.grid(row=0, column=0, sticky="new", padx=(0, 16))
+        left.grid(row=0, column=0, sticky="new", padx=(0, 0 if tables_parent is not None else 16))
         inner = left.body
         caption(inner, "До готовности", left.fill).pack(anchor="w")
         self.next_name = tk.StringVar(value="Пока нет столов")
@@ -117,7 +117,7 @@ class DashboardPage(tk.Frame):
         self.timer_note = tk.StringVar(value="")
         self.lab_timer = tk.StringVar(value="")
         label(inner, "", bg=left.fill, size=11, color="muted", textvariable=self.next_name).pack(anchor="w", pady=(10, 0))
-        self.timer_label = label(inner, "", bg=left.fill, size=40, font=FONT_LIGHT, textvariable=self.next_time)
+        self.timer_label = label(inner, "", bg=left.fill, size=44, font="Bahnschrift SemiBold Condensed", textvariable=self.next_time)
         self.timer_label.pack(anchor="w")
         label(inner, "", bg=left.fill, size=9, color="amber", textvariable=self.timer_note).pack(anchor="w")
         label(inner, "", bg=left.fill, size=9, color="muted", textvariable=self.lab_timer).pack(anchor="w")
@@ -286,7 +286,7 @@ class DashboardPage(tk.Frame):
         elif active:
             self.hint.set(snapshot.reason)
         else:
-            self.hint.set("Встань на общий старт и нажми «Старт»")
+            self.hint.set("Нажми «Старт» или F8 — бот сам дойдёт до плантации из дома")
 
     # ------------------------------------------------------------------------------------
 
