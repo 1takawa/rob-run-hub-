@@ -108,6 +108,69 @@ class PatchNotes(tk.Frame):
         text.focus_set()
 
 
+class VpnCard(tk.Frame):
+    """«Проблема с серверами?»: the author's VPN, its promo code to copy, the bot and the site."""
+
+    BLUE = "#3da9f5"
+
+    def __init__(self, parent: tk.Misc, vpn: dict) -> None:
+        super().__init__(parent, bg=STRIP, highlightthickness=1, highlightbackground=EDGE)
+        self.vpn = vpn
+        tk.Frame(self, bg=self.BLUE, width=3).pack(side="left", fill="y")
+        self.canvas = tk.Canvas(self, bg=STRIP, highlightthickness=0, height=150)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.canvas.bind("<Configure>", self._draw)
+        row = tk.Frame(self.canvas, bg=STRIP)
+        self.canvas.create_window(16, 104, window=row, anchor="w")
+        tk.Label(row, text=vpn["code"], bg="#0f1a24", fg="#ffffff", font=(HEAD, 18), padx=14, pady=1,
+                 highlightthickness=1, highlightbackground=self.BLUE).pack(side="left")
+        self.copy = button(row, "Копировать", self._copy)
+        self.copy.pack(side="left", padx=(8, 0))
+        if vpn.get("bot"):
+            bot = button(row, "✈  Бот", lambda: webbrowser.open(vpn["bot"]))
+            bot.configure(bg=self.BLUE, fg="#0c1a26", highlightbackground=self.BLUE)
+            bot.pack(side="left", padx=(8, 0))
+        if vpn.get("site"):
+            button(row, "Сайт", lambda: webbrowser.open(vpn["site"])).pack(side="left", padx=(8, 0))
+
+    def _draw(self, _event=None) -> None:
+        canvas = self.canvas
+        canvas.delete("deco")
+        width = canvas.winfo_width()
+        for x, y, r in ((width - 40, 30, 90), (width - 70, 56, 48)):   # rings, like a signal
+            canvas.create_oval(x - r, y - r, x + r, y + r, outline="#1e3346", tags="deco")
+        canvas.create_text(16, 26, text="🛡", anchor="w", fill=self.BLUE, font=(BODY, 15), tags="deco")
+        canvas.create_text(42, 26, text=self.vpn.get("title", "Проблема с серверами?").upper(), anchor="w", fill=TEXT,
+                           font=(HEAD, 19), tags="deco")
+        canvas.create_text(16, 62, text=self.vpn.get("text", ""), anchor="w", fill=SOFT, font=(BODY, 12),
+                           width=max(200, min(520, width - 40)), tags="deco")
+        canvas.tag_lower("deco")
+
+    def _copy(self) -> None:
+        self.clipboard_clear()
+        self.clipboard_append(self.vpn["code"])
+        self.copy.configure(text="СКОПИРОВАНО")
+        self.after(1400, lambda: self.copy.configure(text="КОПИРОВАТЬ"))
+
+
+class VpnHint(tk.Frame):
+    """A strip over the page when the game keeps throwing the player out: maybe it is the connection."""
+
+    def __init__(self, parent: tk.Misc, vpn: dict, text: str, on_more, on_close) -> None:
+        super().__init__(parent, bg=STRIP, highlightthickness=1, highlightbackground=EDGE)
+        tk.Frame(self, bg="#e9b93a", width=3).pack(side="left", fill="y")
+        tk.Label(self, text="⚠", bg=STRIP, fg="#e9b93a", font=(BODY, 15)).pack(side="left", padx=(12, 8))
+        body = tk.Frame(self, bg=STRIP)
+        body.pack(side="left", fill="x", expand=True, pady=8)
+        tk.Label(body, text=text, bg=STRIP, fg="#f1cf74", font=(HEAD, 12), anchor="w").pack(anchor="w")
+        tk.Label(body, text=f"Возможно, дело в соединении — VPN бесплатно на месяц по промокоду {vpn.get('code', '')}.",
+                 bg=STRIP, fg=SOFT, font=(BODY, 11), anchor="w").pack(anchor="w")
+        close = tk.Label(self, text="✕", bg=STRIP, fg=MUTED, font=(BODY, 13), padx=12, cursor="hand2")
+        close.pack(side="right")
+        close.bind("<ButtonPress-1>", lambda _e: on_close())
+        button(self, "Подробнее", on_more).pack(side="right", padx=(0, 4))
+
+
 class HomePage(tk.Frame):
     def __init__(self, parent: tk.Misc, state: Callable[[], dict]) -> None:
         """`state()` gives {"hotkeys": [(key, what)], "season": dict|None, "wipe_left": seconds, "runs": int}."""
@@ -123,7 +186,12 @@ class HomePage(tk.Frame):
         lower.pack(fill="x", pady=(10, 0))
         lower.grid_columnconfigure(0, weight=8, uniform="home")
         lower.grid_columnconfigure(1, weight=5, uniform="home")
-        self._news(lower).grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        left = tk.Frame(lower, bg=COLORS["bg"])
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        self._news(left).pack(fill="x")
+        vpn = self.changelog.get("vpn") or {}
+        if vpn.get("code"):
+            VpnCard(left, vpn).pack(fill="x", pady=(10, 0))
         side = tk.Frame(lower, bg=COLORS["bg"])
         side.grid(row=0, column=1, sticky="nsew")
         self.quick = self._card(side, "быстрый старт")
@@ -161,15 +229,13 @@ class HomePage(tk.Frame):
             canvas.create_text(width - 22, 34, text="АВТОР", anchor="e", fill=MUTED, font=(BODY, 9))
 
         canvas.bind("<Configure>", draw)
-        nick = str((self.changelog.get("author") or {}).get("telegram") or "").strip().lstrip("@")
+        info = self.changelog.get("author") or {}
         author = tk.Frame(box, bg=STRIP)
         author.place(in_=canvas, relx=1.0, x=-22, y=46, anchor="ne")
-        if nick:
-            link = button(author, f"✈  @{nick}", lambda: webbrowser.open(f"https://t.me/{nick}"))
+        if info.get("url"):
+            link = button(author, f"✈  {info.get('label') or 'Telegram'}", lambda: webbrowser.open(info["url"]))
             link.configure(fg="#6cc4ff")
             link.pack()
-        else:
-            tk.Label(author, text="Telegram скоро", bg=STRIP, fg=MUTED, font=(BODY, 11)).pack()
 
     def _news(self, parent: tk.Misc) -> tk.Widget:
         box = tk.Frame(parent, bg=STRIP, highlightthickness=1, highlightbackground=EDGE)

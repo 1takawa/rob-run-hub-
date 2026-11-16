@@ -220,6 +220,8 @@ class HarvestAssistantApp:
         main.pack(side="left", fill="both", expand=True)
         tk.Frame(main, bg=COLORS["bg"], height=6).pack(fill="x")   # the keys line and the states moved: keys are in Settings
 
+        self.hint_host = tk.Frame(main, bg=COLORS["bg"])   # the VPN hint shows here when the game keeps kicking
+        self.hint_host.pack(fill="x", padx=36)
         self.page_host = tk.Frame(main, bg=COLORS["bg"])
         self.page_host.pack(fill="both", expand=True)
         self.status_label = tk.Label(main, textvariable=self.status_message_var, bg=COLORS["bg"], fg=COLORS["muted"],
@@ -352,7 +354,9 @@ class HarvestAssistantApp:
         return {
             "hotkeys": [(profile.pause_hotkey, "старт / пауза"), (profile.stop_hotkey, "стоп"),
                         (profile.approach_hotkey, "записать путь до столов"), (profile.autocop_hotkey, "автокоп")],
-            "season": season, "wipe_left": left, "runs": len(self.taught_store.load_runs()),
+            # only the folders are counted: loading every recorded run took over a second each time
+            "season": season, "wipe_left": left,
+            "runs": sum(1 for _ in self.taught_store.folder.glob("run_*/run.json")),
         }
 
     def _apply_game_window(self) -> None:
@@ -554,6 +558,7 @@ class HarvestAssistantApp:
                 )
                 self.runner.stop()  # never let the route type into the menu
             self.logger.warning("Thrown into the lobby (route %s)", "stopped" if active else "was not running")
+            self._note_kick()
             self._set_status(
                 "Выкинуло в лобби. Маршрут остановлен." + (" Возвращаюсь…" if self.profile.auto_reconnect else " Автореконнект выключен.")
             )
@@ -570,6 +575,52 @@ class HarvestAssistantApp:
             self._resume_after_reconnect = False
             self.logger.warning("Reconnect failed: %s", text)
             self._set_status(text)
+            self._show_vpn_hint("Не удалось вернуться на сервер.")
+
+    KICKS_FOR_HINT = 3   # thrown out this many times within an hour: the VPN hint shows
+
+    def _note_kick(self) -> None:
+        now = time.time()
+        self._kicks = [t for t in getattr(self, "_kicks", []) if now - t < 3600] + [now]
+        if len(self._kicks) >= self.KICKS_FOR_HINT:
+            self._show_vpn_hint(f"Вылет с сервера {len(self._kicks)} раза за час.")
+
+    def _ui_state_path(self) -> Path:
+        return self.profile_path.parent / "ui_state.json"
+
+    def _show_vpn_hint(self, text: str) -> None:
+        """Once a day at most, and never again that day after it was closed."""
+        import json
+
+        from .ui.home_page import VpnHint, load_changelog
+
+        vpn = load_changelog().get("vpn") or {}
+        if not vpn.get("code") or getattr(self, "_vpn_hint", None) is not None:
+            return
+        today = time.strftime("%Y-%m-%d")
+        try:
+            state = json.loads(self._ui_state_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            state = {}
+        if state.get("vpn_hint_closed") == today:
+            return
+
+        def close() -> None:
+            state["vpn_hint_closed"] = today
+            try:
+                self._ui_state_path().write_text(json.dumps(state), encoding="utf-8")
+            except OSError:
+                pass
+            if self._vpn_hint is not None:
+                self._vpn_hint.destroy()
+                self._vpn_hint = None
+
+        def more() -> None:
+            self._show_page("home")
+            close()
+
+        self._vpn_hint = VpnHint(self.hint_host, vpn, text, more, close)
+        self._vpn_hint.pack(fill="x", pady=(10, 0))
 
     def _set_reconnect(self, enabled: bool) -> None:
         with self.profile_lock:
