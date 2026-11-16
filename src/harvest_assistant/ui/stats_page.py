@@ -172,7 +172,7 @@ class StatsPage(tk.Frame):
     def _summary(self, season: dict) -> dict:
         return SeasonStore.summary(season, list(self.stats.data.get("events", [])), self._combat_sessions())
 
-    EVERY_MS = 60 * 1000        # the tab looks every minute; it is redrawn only when a shown number changed
+    EVERY_MS = 15 * 60 * 1000   # the tab refreshes itself every 15 minutes, or with «Обновить»
 
     def update_now(self) -> None:
         self._signature = None
