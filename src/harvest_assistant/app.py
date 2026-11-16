@@ -55,7 +55,7 @@ from .ui.table_dialogs import TableDialogs
 from .ui.overlay_page import OverlayPage
 from .ui.autocop_page import AutocopPage
 from .ui.rob_run_info_page import ROBRunInfoPage
-from .ui.theme import COLORS, FONT, FONT_SEMI, NavItem, StatusDot, apply_theme
+from .ui.theme import COLORS, FONT, FONT_SEMI, HEAD, INK, NavItem, StatusDot, apply_theme
 
 
 class HarvestAssistantApp:
@@ -197,20 +197,31 @@ class HarvestAssistantApp:
         nav.pack(fill="x", padx=12)
         sections = (   # (heading or None, the tabs under it)
             (None, (("home", "Главная", ""),)),
-            ("Боты", (("launch", "Запуск", ""), ("tables", "Плантация", ""), ("lab", "Лаборатория", "в разработке"),
+            ("Боты", (("launch", "Запуск", ""), ("tables", "Плантация", ""), ("lab", "Лаборатория", "скоро"),
                       ("autocop", "Автокоп", ""))),
             ("Tools", (("rob_run_info", "Рейд калькулятор", ""), ("overlay", "Оверлей", ""), ("stats", "Статистика", ""))),
             (None, (("settings", "Настройки", ""),)),
         )
-        for index, (heading, tabs) in enumerate(sections):
-            if index:
-                tk.Frame(nav, bg=COLORS["rail"], height=10).pack(fill="x")
+        for heading, tabs in sections:
+            host = nav
             if heading:
-                tk.Label(nav, text=heading.upper(), bg=COLORS["rail"], fg=COLORS["faint"], font=(FONT_SEMI, 8),
-                         anchor="w").pack(fill="x", padx=18, pady=(0, 2))
+                # a category: a slanted lime tab with the name, and a lime bar along its tabs on the left
+                tab = tk.Canvas(nav, bg=COLORS["rail"], highlightthickness=0, height=20)
+                name = tab.create_text(8, 10, text=heading.upper(), anchor="w", fill=INK, font=(HEAD, 11))
+                right = tab.bbox(name)[2] + 14
+                tab.tag_raise(name, tab.create_polygon(0, 0, right, 0, right - 6, 20, 0, 20, fill=COLORS["green"], outline=""))
+                tab.configure(width=right + 2)
+                tab.pack(anchor="w", padx=(4, 0), pady=(14, 0))
+                group = tk.Frame(nav, bg=COLORS["rail"])
+                group.pack(fill="x", padx=(4, 0), pady=(4, 0))
+                tk.Frame(group, bg=COLORS["green"], width=2).pack(side="left", fill="y")
+                host = tk.Frame(group, bg=COLORS["rail"])
+                host.pack(side="left", fill="x", expand=True, padx=(4, 0))
+            elif self._nav_buttons:
+                tk.Frame(nav, bg=COLORS["border"], height=1).pack(fill="x", padx=4, pady=(14, 6))   # Settings apart
             for page_id, text, badge in tabs:
                 ready = page_id != "lab"   # the laboratory is not ready: shown, but cannot be opened
-                item = NavItem(nav, text, lambda value=page_id: self._show_page(value), badge=badge, enabled=ready)
+                item = NavItem(host, text, lambda value=page_id: self._show_page(value), badge=badge, enabled=ready)
                 item.pack(fill="x", pady=1)
                 self._nav_buttons[page_id] = item
         from .ui.update_box import UpdateBox

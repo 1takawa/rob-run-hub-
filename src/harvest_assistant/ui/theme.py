@@ -500,9 +500,12 @@ class NavItem(tk.Canvas):
             self._image = shape_image(width, 40, 12, fill)
             self.create_image(0, 0, anchor="nw", image=self._image)
         color = COLORS["text"] if self._selected else (COLORS["muted"] if self._enabled else COLORS["faint"])
-        if self._badge and not self._enabled:   # a tab that is not ready: name on top, the note under it
-            self.create_text(18, 14, text=self._text, anchor="w", fill=color, font=(FONT, 11))
-            self.create_text(18, 31, text=self._badge, anchor="w", fill=COLORS["amber"], font=(FONT, 7))
+        if self._badge and not self._enabled:   # a tab that is not ready: the name, and an amber slanted tag on the right
+            self.create_text(18, 20, text=self._text, anchor="w", fill=color, font=(FONT, 11))
+            note = self.create_text(width - 18, 20, text=self._badge.upper(), anchor="e", fill="#412402", font=(HEAD, 9))
+            x0, _y0, x1, _y1 = self.bbox(note)
+            self.tag_raise(note, self.create_polygon(x0 - 6, 12, x1 + 9, 12, x1 + 5, 28, x0 - 6, 28,
+                                                     fill="#e9b93a", outline=""))
             return
         self.create_text(18, 20, text=self._text, anchor="w", fill=color, font=(FONT_SEMI if self._selected else FONT, 11))
         if self._badge:
