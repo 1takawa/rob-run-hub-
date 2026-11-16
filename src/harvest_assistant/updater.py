@@ -42,6 +42,24 @@ def version(folder: Path = PROJECT_DIR) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+def version_name(folder: Path = PROJECT_DIR, ref: str | None = None) -> str:
+    """The number of the release, «1.1.1», from CHANGELOG.json (on disk, or as it is in `ref` such as origin/main)."""
+    try:
+        if ref is None:
+            text = (folder / "CHANGELOG.json").read_text(encoding="utf-8")
+        else:
+            result = _git("show", f"{ref}:CHANGELOG.json", folder=folder, timeout=10)
+            if result.returncode != 0:
+                return ""
+            text = result.stdout
+        import json
+
+        releases = json.loads(text).get("releases") or []
+        return str(releases[0].get("version", "")) if releases else ""
+    except (OSError, ValueError, subprocess.SubprocessError, AttributeError):
+        return ""
+
+
 def head(folder: Path = PROJECT_DIR) -> str:
     """Short hash of the version on disk now (empty when it is not a git copy)."""
     try:
@@ -67,7 +85,10 @@ def check(folder: Path = PROJECT_DIR) -> UpdateInfo:
         if changed:
             return UpdateInfo("local_changes", "Доступно обновление, но файлы программы изменены вручную: "
                               "сначала верни их или обнови вручную.", local, behind, titles)
-        return UpdateInfo("available", f"Доступно обновление: {behind} {_plural(behind)}.", local, behind, titles)
+        newer = version_name(folder, f"{REMOTE}/{BRANCH}")
+        text = f"Доступно обновление {newer}." if newer and newer != version_name(folder) else \
+            f"Доступно обновление: {behind} {_plural(behind)}."
+        return UpdateInfo("available", text, local, behind, titles)
     except FileNotFoundError:
         return UpdateInfo("error", "Git не установлен: скачай его с git-scm.com, чтобы получать обновления.")
     except (OSError, subprocess.SubprocessError, ValueError) as exc:

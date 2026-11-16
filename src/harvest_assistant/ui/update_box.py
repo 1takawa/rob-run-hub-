@@ -29,8 +29,9 @@ class UpdateBox(tk.Frame):
         self.version.pack(fill="x", pady=(6, 0))
         # the version this window runs: files on disk may be newer (downloaded, not restarted yet)
         self._running = updater.head()
-        text = updater.version()
-        self.version.configure(text=f"версия {text}" if text else "")
+        name, text = updater.version_name(), updater.version()
+        self.version.configure(text=f"версия {name}" + (f" · {text.split(' · ')[0]}" if text else "") if name
+                               else (f"версия {text}" if text else ""))
 
     def _say(self, text: str, color: str = "muted") -> None:
         self.message.configure(text=text, fg=COLORS.get(color, color))
@@ -55,7 +56,7 @@ class UpdateBox(tk.Frame):
         color = {"latest": "green", "available": "amber", "local_changes": "amber", "error": "red"}.get(info.state, "muted")
         if info.state == "latest" and self._running and info.local and info.local != self._running:
             # the newest version is on disk already, but this window still runs the old one
-            self._say(f"Новая версия {info.local} уже скачана. Перезапусти приложение.", "amber")
+            self._say(f"Новая версия {updater.version_name() or info.local} уже скачана. Перезапусти приложение.", "amber")
             self.action.configure(text="Перезапустить", command=self.restart, state="normal")
             self.action.pack(anchor="w", pady=(8, 0), before=self.version)
             return

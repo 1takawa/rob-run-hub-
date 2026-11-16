@@ -108,6 +108,26 @@ class PatchNotes(tk.Frame):
         text.focus_set()
 
 
+def icon_image(name: str):
+    """A small picture from assets (kept, tkinter forgets pictures nobody holds)."""
+    from PIL import ImageTk
+
+    if name not in _logos:
+        _logos[name] = ImageTk.PhotoImage(file=str(ASSETS / name))
+    return _logos[name]
+
+
+def telegram_button(parent: tk.Misc, text: str, url: str, *, filled: bool = False) -> tk.Label:
+    """A button with the Telegram logo: blue when `filled`."""
+    widget = button(parent, text, lambda: webbrowser.open(url))
+    widget.configure(image=icon_image("tg_18.png"), compound="left", padx=12)
+    if filled:
+        widget.configure(bg="#3da9f5", fg="#0c1a26", highlightbackground="#3da9f5")
+    else:
+        widget.configure(fg="#6cc4ff")
+    return widget
+
+
 class VpnCard(tk.Frame):
     """«Проблема с серверами?»: the author's VPN, its promo code to copy, the bot and the site."""
 
@@ -117,40 +137,99 @@ class VpnCard(tk.Frame):
         super().__init__(parent, bg=STRIP, highlightthickness=1, highlightbackground=EDGE)
         self.vpn = vpn
         tk.Frame(self, bg=self.BLUE, width=3).pack(side="left", fill="y")
-        self.canvas = tk.Canvas(self, bg=STRIP, highlightthickness=0, height=150)
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.canvas.bind("<Configure>", self._draw)
-        row = tk.Frame(self.canvas, bg=STRIP)
-        self.canvas.create_window(16, 104, window=row, anchor="w")
-        tk.Label(row, text=vpn["code"], bg="#0f1a24", fg="#ffffff", font=(HEAD, 18), padx=14, pady=1,
+        rings = tk.Canvas(self, bg=STRIP, highlightthickness=0, width=190, height=150)   # like a signal, top right
+        rings.place(relx=1.0, x=-1, y=0, anchor="ne")
+        for x, y, r in ((150, 30, 100), (120, 60, 52)):
+            rings.create_oval(x - r, y - r, x + r, y + r, outline="#1e3346")
+        body = tk.Frame(self, bg=STRIP)
+        body.pack(side="left", fill="y", padx=16, pady=14)   # the rings show on the right
+        head = tk.Frame(body, bg=STRIP)
+        head.pack(anchor="w")
+        tk.Label(head, text="🛡", bg=STRIP, fg=self.BLUE, font=(BODY, 16)).pack(side="left")
+        tk.Label(head, text=vpn.get("title", "Проблема с серверами?").upper(), bg=STRIP, fg=TEXT,
+                 font=(HEAD, 20)).pack(side="left", padx=(6, 0))
+        tk.Label(body, text=vpn.get("text", ""), bg=STRIP, fg=SOFT, font=(BODY, 12), justify="left", anchor="w",
+                 wraplength=420).pack(anchor="w", pady=(4, 12))
+        row = tk.Frame(body, bg=STRIP)
+        row.pack(anchor="w")
+        tk.Label(row, text=vpn["code"], bg="#0f1a24", fg="#ffffff", font=(HEAD, 18), padx=14, pady=0,
                  highlightthickness=1, highlightbackground=self.BLUE).pack(side="left")
         self.copy = button(row, "Копировать", self._copy)
         self.copy.pack(side="left", padx=(8, 0))
         if vpn.get("bot"):
-            bot = button(row, "✈  Бот", lambda: webbrowser.open(vpn["bot"]))
-            bot.configure(bg=self.BLUE, fg="#0c1a26", highlightbackground=self.BLUE)
-            bot.pack(side="left", padx=(8, 0))
+            telegram_button(row, "Бот", vpn["bot"], filled=True).pack(side="left", padx=(8, 0))
         if vpn.get("site"):
             button(row, "Сайт", lambda: webbrowser.open(vpn["site"])).pack(side="left", padx=(8, 0))
-
-    def _draw(self, _event=None) -> None:
-        canvas = self.canvas
-        canvas.delete("deco")
-        width = canvas.winfo_width()
-        for x, y, r in ((width - 40, 30, 90), (width - 70, 56, 48)):   # rings, like a signal
-            canvas.create_oval(x - r, y - r, x + r, y + r, outline="#1e3346", tags="deco")
-        canvas.create_text(16, 26, text="🛡", anchor="w", fill=self.BLUE, font=(BODY, 15), tags="deco")
-        canvas.create_text(42, 26, text=self.vpn.get("title", "Проблема с серверами?").upper(), anchor="w", fill=TEXT,
-                           font=(HEAD, 19), tags="deco")
-        canvas.create_text(16, 62, text=self.vpn.get("text", ""), anchor="w", fill=SOFT, font=(BODY, 12),
-                           width=max(200, min(520, width - 40)), tags="deco")
-        canvas.tag_lower("deco")
+        tk.Misc.lower(rings)   # under the text and the buttons
 
     def _copy(self) -> None:
         self.clipboard_clear()
         self.clipboard_append(self.vpn["code"])
         self.copy.configure(text="СКОПИРОВАНО")
         self.after(1400, lambda: self.copy.configure(text="КОПИРОВАТЬ"))
+
+
+class WipeStrip(tk.Frame):
+    """The current wipe: when the server started, which of its seven days it is, how long until the wipe. The bar fills
+    from green through yellow to red as the wipe comes nearer."""
+
+    STOPS = ((0.0, (70, 196, 106)), (0.5, (233, 185, 58)), (1.0, (255, 74, 61)))
+
+    def __init__(self, parent: tk.Misc, open_stats) -> None:
+        super().__init__(parent, bg=STRIP, highlightthickness=1, highlightbackground=EDGE)
+        self.open_stats = open_stats
+        self.canvas = tk.Canvas(self, bg=STRIP, highlightthickness=0, height=86)
+        self.canvas.pack(fill="x")
+        self.canvas.bind("<Configure>", lambda _e: self.draw())
+        self.season: dict | None = None
+        self.left = 0.0
+
+    @classmethod
+    def color(cls, share: float) -> str:
+        for (a, ca), (b, cb) in zip(cls.STOPS, cls.STOPS[1:]):
+            if share <= b:
+                t = (share - a) / (b - a)
+                return "#%02x%02x%02x" % tuple(round(x + (y - x) * t) for x, y in zip(ca, cb))
+        return "#%02x%02x%02x" % cls.STOPS[-1][1]
+
+    def show(self, season: dict | None, left: float) -> None:
+        self.season, self.left = season, left
+        self.draw()
+
+    def draw(self) -> None:
+        canvas = self.canvas
+        canvas.delete("all")
+        width = max(300, canvas.winfo_width())
+        if not self.season:
+            canvas.create_text(16, 30, text="ТЕКУЩИЙ ВАЙП", anchor="w", fill=MUTED, font=(BODY, 9))
+            canvas.create_text(16, 56, text="Штат не выбран — заведи его во вкладке «Статистика»", anchor="w", fill=SOFT,
+                               font=(BODY, 12))
+            link = canvas.create_text(width - 16, 56, text="ОТКРЫТЬ СТАТИСТИКУ →", anchor="e", fill=LIME, font=(HEAD, 11))
+            canvas.tag_bind(link, "<ButtonPress-1>", lambda _e: self.open_stats())
+            return
+        season, total = self.season, 7 * 86400
+        passed = min(total, max(0.0, total - self.left))
+        share = passed / total
+        day = min(7, int(passed // 86400) + 1)
+        started = time.strftime("%d.%m.%Y · %H:%M", time.localtime(season["started_at"]))
+        canvas.create_text(16, 20, text="ТЕКУЩИЙ ВАЙП", anchor="w", fill=MUTED, font=(BODY, 9))
+        canvas.create_text(104, 20, text=f"{season['code']} · {season.get('name', '')}", anchor="w", fill=LIME, font=(HEAD, 11))
+        canvas.create_text(16, 44, text="СТАРТ СЕРВЕРА", anchor="w", fill=MUTED, font=(BODY, 9))
+        canvas.create_text(16, 64, text=started, anchor="w", fill=TEXT, font=(HEAD, 15))
+        x0, x1 = 200, width - 120
+        canvas.create_text(x0, 44, text=f"День {day} из 7", anchor="w", fill=SOFT, font=(BODY, 11))
+        hours = int(self.left // 3600)
+        canvas.create_text(x1, 44, text=f"До вайпа {hours // 24} д {hours % 24:02d} ч", anchor="e", fill=SOFT, font=(BODY, 11))
+        canvas.create_rectangle(x0, 58, x1, 68, fill=PANEL, outline="")
+        filled = x0 + (x1 - x0) * share
+        step = 3
+        x = x0
+        while x < filled:   # the colour follows the place on the scale: green at the start, red at the wipe
+            right = min(filled, x + step)
+            canvas.create_rectangle(x, 58, right, 68, fill=self.color((x - x0) / max(1, x1 - x0)), outline="")
+            x = right
+        canvas.create_text(width - 16, 52, text=f"{max(0, 7 - day)} дн." if day < 7 else "последний день", anchor="e",
+                           fill=self.color(share), font=(HEAD, 16))
 
 
 class VpnHint(tk.Frame):
@@ -172,7 +251,7 @@ class VpnHint(tk.Frame):
 
 
 class HomePage(tk.Frame):
-    def __init__(self, parent: tk.Misc, state: Callable[[], dict]) -> None:
+    def __init__(self, parent: tk.Misc, state: Callable[[], dict], open_stats: Callable[[], None] = lambda: None) -> None:
         """`state()` gives {"hotkeys": [(key, what)], "season": dict|None, "wipe_left": seconds, "runs": int}."""
         super().__init__(parent, bg=COLORS["bg"])
         self.state = state
@@ -182,6 +261,8 @@ class HomePage(tk.Frame):
         body = scroll.inner
         tk.Frame(body, bg=COLORS["bg"], height=28).pack()
         self._hero(body)
+        self.wipe = WipeStrip(body, open_stats)
+        self.wipe.pack(fill="x", pady=(10, 0))
         lower = tk.Frame(body, bg=COLORS["bg"])
         lower.pack(fill="x", pady=(10, 0))
         lower.grid_columnconfigure(0, weight=8, uniform="home")
@@ -196,8 +277,6 @@ class HomePage(tk.Frame):
         side.grid(row=0, column=1, sticky="nsew")
         self.quick = self._card(side, "быстрый старт")
         self.quick.pack(fill="x")
-        self.status = self._card(side, "состояние")
-        self.status.pack(fill="x", pady=(10, 0))
         self.refresh()
 
     # ---- parts ----------------------------------------------------------------------------------------------------
@@ -210,7 +289,7 @@ class HomePage(tk.Frame):
         self._wordmark = logo_image("logo_wordmark.png", height=80, bg=STRIP)
         canvas.pack(fill="x")
         edition = self.changelog.get("edition", "ROB RUN EDITION")
-        version = updater.version()
+        version = updater.version_name() or updater.version()
 
         def draw(_event=None) -> None:
             canvas.delete("all")
@@ -226,16 +305,13 @@ class HomePage(tk.Frame):
             canvas.tag_raise(label, canvas.create_rectangle(x0 - 8, y0 - 2, x1 + 8, y1 + 2, fill=LIME, outline=""))
             if version:
                 canvas.create_text(x1 + 18, 118, text=f"версия {version}", anchor="w", fill=MUTED, font=(BODY, 10))
-            canvas.create_text(width - 22, 34, text="АВТОР", anchor="e", fill=MUTED, font=(BODY, 9))
 
         canvas.bind("<Configure>", draw)
         info = self.changelog.get("author") or {}
         author = tk.Frame(box, bg=STRIP)
-        author.place(in_=canvas, relx=1.0, x=-22, y=46, anchor="ne")
+        author.place(in_=canvas, relx=1.0, x=-22, y=24, anchor="ne")
         if info.get("url"):
-            link = button(author, f"✈  {info.get('label') or 'Telegram'}", lambda: webbrowser.open(info["url"]))
-            link.configure(fg="#6cc4ff")
-            link.pack()
+            telegram_button(author, info.get("label") or "Telegram", info["url"]).pack()
 
     def _news(self, parent: tk.Misc) -> tk.Widget:
         box = tk.Frame(parent, bg=STRIP, highlightthickness=1, highlightbackground=EDGE)
@@ -283,15 +359,7 @@ class HomePage(tk.Frame):
             state = self.state()
         except Exception:
             state = {}
-        self._fill(self.quick, [(key.upper(), what) for key, what in state.get("hotkeys", [])])
-        season = state.get("season")
-        lines = []
-        if season:
-            left = int(state.get("wipe_left", 0)) // 3600
-            when = f"вайп через {left // 24} д {left % 24} ч" if left >= 24 else f"вайп через {left} ч"
-            lines.append(("", f"штат {season['code']} · {when}"))
-        else:
-            lines.append(("", "штат не выбран — «Статистика»"))
+        lines = [(key.upper(), what) for key, what in state.get("hotkeys", [])]
         lines.append(("", f"заходов записано: {state.get('runs', 0)}"))
-        lines.append(("", time.strftime("обновлено %H:%M")))
-        self._fill(self.status, lines)
+        self._fill(self.quick, lines)
+        self.wipe.show(state.get("season"), float(state.get("wipe_left", 0)))

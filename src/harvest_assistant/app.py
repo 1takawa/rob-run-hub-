@@ -296,7 +296,7 @@ class HarvestAssistantApp:
         self.hotkey_vars = self.settings_page.hotkey_vars
         from .ui.home_page import HomePage
 
-        self.home_page = HomePage(self.page_host, self._home_state)
+        self.home_page = HomePage(self.page_host, self._home_state, lambda: self._show_page("stats"))
         self.pages = {
             "home": self.home_page,
             "launch": self.dashboard_page,
