@@ -199,8 +199,8 @@ class HarvestAssistantApp:
             (None, (("home", "Главная", ""),)),
             ("Боты", (("launch", "Запуск", ""), ("tables", "Плантация", ""), ("lab", "Лаборатория", "в разработке"),
                       ("autocop", "Автокоп", ""))),
-            ("ROB RUN Info", (("rob_run_info", "Рейд калькулятор", ""),)),
-            (None, (("stats", "Статистика", ""), ("overlay", "Оверлей", ""), ("settings", "Настройки", ""))),
+            ("Tools", (("rob_run_info", "Рейд калькулятор", ""), ("overlay", "Оверлей", ""), ("stats", "Статистика", ""))),
+            (None, (("settings", "Настройки", ""),)),
         )
         for index, (heading, tabs) in enumerate(sections):
             if index:

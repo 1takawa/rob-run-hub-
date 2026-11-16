@@ -1,4 +1,4 @@
-"""«Рейд калькулятор» (in the «ROB RUN Info» part of the menu): the decoder calculator, in the look of the game.
+"""«Рейд калькулятор» (in the «Tools» part of the menu): the decoder calculator, in the look of the game.
 
 Pick a structure (a tile), set the fuses in it with − / + (the cells fill up), and see the defense and how many
 decoders of each quality it takes and how long they install."""
