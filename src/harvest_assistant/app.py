@@ -42,7 +42,6 @@ from .models import (
     start_table_timer,
 )
 from .persistence import save_profile
-from .progression_store import ProgressionStore
 from .discord_presence import DiscordPresenceController, build_presence_payload
 from .screen import ScreenService
 from .vision import VisionService
@@ -79,7 +78,6 @@ class HarvestAssistantApp:
         from .seasons import SeasonStore
 
         self.seasons = SeasonStore(profile_path.parent / "seasons.json")   # the states (servers) and their seasons
-        self.progression_store = ProgressionStore(profile_path.parent / "progression.json")
         self.routes_dir = profile_path.parent / "routes"
         self.taught_store = TaughtStore(profile_path.parent / "taught")
         self.profile.loot_totals.clear()  # old lifetime counters: statistics now live in stats.json
@@ -253,9 +251,7 @@ class HarvestAssistantApp:
         self.dashboard_page = DashboardPage(self.page_host, dashboard_callbacks, self._on_table_selected, self.profile, self.vision,
                                             self.timer_pause_var, self.stats, tables_parent=self.plantation_page.tables_host)
         self.stats_page = StatsPage(self.page_host, self.stats, self.seasons)
-        self.rob_run_info_page = ROBRunInfoPage(
-            self.page_host, lambda: self.seasons.current(), lambda: self.seasons.history(), self.progression_store,
-        )
+        self.rob_run_info_page = ROBRunInfoPage(self.page_host)
         self.lab_page = LabPage(
             self.page_host, self.profile, self._save_laboratory,
             lambda stage: self._choose_marker(stage),

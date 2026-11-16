@@ -1,276 +1,172 @@
-"""Decoder calculator and editable, season-specific progression checklist."""
+"""«ROB RUN Info»: the decoder calculator, in the look of the game.
+
+Pick a structure (a tile), set the fuses in it with − / + (the cells fill up), and see the defense and how many
+decoders of each quality it takes and how long they install."""
 
 from __future__ import annotations
 
-import json
 import tkinter as tk
-import time
-from tkinter import messagebox, ttk
-from typing import Callable
 
-from ..progression_store import ProgressionStore
-from ..rob_run_tools import DECODER_LABELS, STRUCTURES, normalize_goal, plan_totals, raid_defense
-from .theme import COLORS, FONT_SEMI, Card, PillButton, ScrollPage, label, page_header
+from ..rob_run_tools import DECODER_LABELS, FUSE_POINTS, STRUCTURES, raid_defense
+from .theme import COLORS, Block, ScrollPage, page_header
+
+LIME, INK, PANEL, TEXT, MUTED, DIM, EDGE = "#c6fb33", "#141414", "#0f0f0e", "#e9e9e4", "#8d8d86", "#5f5f59", "#2c2c2a"
+HEAD, BODY = "Bahnschrift SemiBold Condensed", "Bahnschrift Condensed"
+RARITY = {   # the colours of the qualities, as the items of the game
+    "uncommon": ("#46c46a", "Обычные"),
+    "epic": ("#b06cf0", "Эпические"),
+    "legendary": ("#f5c542", "Легендарные"),
+}
 
 
-def _money(value: int) -> str:
-    return f"${value:,}".replace(",", " ")
+def _duration(seconds: int) -> str:
+    minutes, rest = divmod(int(seconds), 60)
+    return f"{minutes} мин {rest:02d} с" if minutes else f"{rest} с"
 
 
 class ROBRunInfoPage(tk.Frame):
-    def __init__(self, parent: tk.Misc, get_season: Callable[[], dict | None],
-                 get_history: Callable[[], list[dict]], store: ProgressionStore) -> None:
+    def __init__(self, parent: tk.Misc, *_unused) -> None:
         super().__init__(parent, bg=COLORS["bg"])
-        self.get_season = get_season
-        self.get_history = get_history
-        self.store = store
-        self._season_id: int | None = None
-        self._signature: str | None = None
-        self._season_choice_initialized = False
-        self._selected_season_id: int | None = None
-        self._current_season_id: int | None = None
-        self._season_choice_ids: dict[str, int | None] = {}
-        self._structure_keys = list(STRUCTURES)
-        self._structure_names = [str(STRUCTURES[key]["name"]) for key in self._structure_keys]
+        self.structure = next(iter(STRUCTURES))
+        self.fuses = {key: 0 for key in FUSE_POINTS}
+        self.tiles: dict[str, tk.Frame] = {}
 
-        scroll = ScrollPage(self, max_width=920)
+        scroll = ScrollPage(self, max_width=980)
         scroll.pack(fill="both", expand=True)
         body = scroll.inner
-        page_header(body, "ROB RUN Info", "Помощник по рейду и развитию на сезон").pack(fill="x", pady=(34, 22), padx=4)
+        page_header(body, "ROB RUN Info", "калькулятор декодеров").pack(fill="x", pady=(34, 20), padx=4)
 
-        raid = Card(body, padding=(24, 20), radius=18)
-        raid.pack(fill="x", pady=(0, 18))
-        label(raid.body, "КАЛЬКУЛЯТОР ДЕКОДЕРОВ", size=12, font=FONT_SEMI, color="muted", bg=raid.fill).pack(anchor="w")
-        label(raid.body, "Выбери строение и укажи предохранители. Считаются все три качества декодера.",
-              size=9, color="muted", bg=raid.fill, wraplength=780, justify="left").pack(anchor="w", pady=(5, 14))
-        controls = tk.Frame(raid.body, bg=raid.fill)
-        controls.pack(fill="x")
-        label(controls, "Строение", size=9, color="muted", bg=raid.fill).grid(row=0, column=0, sticky="w", padx=(0, 10))
-        self.structure_var = tk.StringVar(value=self._structure_names[0])
-        self.structure_box = ttk.Combobox(controls, state="readonly", width=28, values=self._structure_names,
-                                           textvariable=self.structure_var)
-        self.structure_box.grid(row=1, column=0, sticky="w", padx=(0, 18), pady=(5, 0))
-        self.structure_box.bind("<<ComboboxSelected>>", lambda _event: self._calculate())
+        # 1. the structure
+        pick = Block(body, "Строение", "lime")
+        pick.pack(fill="x", pady=(0, 10))
+        grid = tk.Frame(pick.body, bg=pick.fill)
+        grid.pack(fill="x")
+        for index, (key, item) in enumerate(STRUCTURES.items()):
+            grid.grid_columnconfigure(index % 4, weight=1, uniform="tiles")
+            tile = tk.Frame(grid, bg=PANEL, highlightthickness=1, highlightbackground=EDGE, cursor="hand2")
+            tile.grid(row=index // 4, column=index % 4, sticky="nsew", padx=(0 if index % 4 == 0 else 6, 0), pady=(0, 6))
+            name = tk.Label(tile, text=str(item["name"]).upper(), bg=PANEL, fg=TEXT, font=(HEAD, 13), anchor="w", cursor="hand2")
+            name.pack(fill="x", padx=10, pady=(7, 0))
+            info = tk.Label(tile, text=f"база {item['base']} · ячеек {item['slots']}", bg=PANEL, fg=MUTED, font=(BODY, 10),
+                            anchor="w", cursor="hand2")
+            info.pack(fill="x", padx=10, pady=(0, 7))
+            for widget in (tile, name, info):
+                widget.bind("<ButtonPress-1>", lambda _e, k=key: self._pick(k))
+            self.tiles[key] = tile
 
-        self.fuse_vars = {key: tk.StringVar(value="0") for key in ("uncommon", "epic", "legendary")}
-        names = (("uncommon", "Обычные фьюзы · 1 очко"), ("epic", "Эпические · 3 очка"),
-                 ("legendary", "Легендарные · 5 очков"))
-        for column, (key, title) in enumerate(names, start=1):
-            group = tk.Frame(controls, bg=raid.fill)
-            group.grid(row=0, column=column, sticky="w", padx=(0, 12))
-            label(group, title, size=9, color="muted", bg=raid.fill).pack(anchor="w")
-            entry = ttk.Entry(group, textvariable=self.fuse_vars[key], width=8)
-            entry.pack(anchor="w", pady=(5, 0))
-            entry.bind("<KeyRelease>", lambda _event: self._calculate())
-            self.fuse_vars[key].trace_add("write", lambda *_args: self._calculate())
+        # 2. the fuses in it
+        fuses = Block(body, "Предохранители", "grey")
+        fuses.pack(fill="x", pady=(0, 10))
+        self.cells_note = fuses.note("")
+        row = tk.Frame(fuses.body, bg=fuses.fill)
+        row.pack(fill="x")
+        self.counts: dict[str, tk.Label] = {}
+        for index, (key, (color, name)) in enumerate(RARITY.items()):
+            row.grid_columnconfigure(index, weight=1, uniform="fuses")
+            cell = tk.Frame(row, bg=PANEL)
+            cell.grid(row=0, column=index, sticky="nsew", padx=(0 if index == 0 else 8, 0))
+            tk.Frame(cell, bg=color, width=4).pack(side="left", fill="y")
+            text = tk.Frame(cell, bg=PANEL)
+            text.pack(side="left", padx=10, pady=8)
+            tk.Label(text, text=name.upper(), bg=PANEL, fg=color, font=(HEAD, 12)).pack(anchor="w")
+            tk.Label(text, text=f"+{FUSE_POINTS[key]} к защите", bg=PANEL, fg=MUTED, font=(BODY, 10)).pack(anchor="w")
+            stepper = tk.Frame(cell, bg=PANEL)
+            stepper.pack(side="right", padx=10)
+            self._step_button(stepper, "−", lambda k=key: self._change(k, -1)).pack(side="left")
+            count = tk.Label(stepper, text="0", bg=PANEL, fg=TEXT, font=(HEAD, 20), width=3)
+            count.pack(side="left")
+            self._step_button(stepper, "+", lambda k=key: self._change(k, +1)).pack(side="left")
+            self.counts[key] = count
+        self.cells = tk.Canvas(fuses.body, bg=fuses.fill, height=16, highlightthickness=0)
+        self.cells.pack(fill="x", pady=(10, 0))
+        self.cells.bind("<Configure>", lambda _e: self._draw_cells())
 
-        self.raid_result = tk.StringVar(value="")
-        label(raid.body, "", size=11, font=FONT_SEMI, bg=raid.fill, textvariable=self.raid_result,
-              wraplength=800, justify="left").pack(anchor="w", pady=(16, 0))
-        label(raid.body, "Расчёт по правилам ROB RUN Info: установка одного декодера занимает 12 секунд. Проверь правила игры перед рейдом.",
-              size=8, color="muted", bg=raid.fill, wraplength=800, justify="left").pack(anchor="w", pady=(8, 0))
-
-        plan = Card(body, padding=(24, 20), radius=18)
-        plan.pack(fill="x", pady=(0, 18))
-        top = tk.Frame(plan.body, bg=plan.fill)
-        top.pack(fill="x")
-        label(top, "ПЛАН РАЗВИТИЯ НА СЕЗОН", size=12, font=FONT_SEMI, color="muted", bg=plan.fill).pack(side="left")
-        PillButton(top, "+ Добавить цель", self._add_goal, style="primary", padx=16, height=34, size=9).pack(side="right")
-        season_row = tk.Frame(plan.body, bg=plan.fill)
-        season_row.pack(fill="x", pady=(10, 0))
-        label(season_row, "Штат плана", size=9, color="muted", bg=plan.fill).pack(side="left")
-        self.season_choice_var = tk.StringVar(value="")
-        self.season_choice_box = ttk.Combobox(season_row, state="readonly", width=42, textvariable=self.season_choice_var)
-        self.season_choice_box.pack(side="right")
-        self.season_choice_box.bind("<<ComboboxSelected>>", self._choose_season)
-        self.season_caption = tk.StringVar(value="")
-        label(plan.body, "", size=9, color="muted", bg=plan.fill, textvariable=self.season_caption).pack(anchor="w", pady=(6, 12))
-        self.goals_host = tk.Frame(plan.body, bg=plan.fill)
-        self.goals_host.pack(fill="x")
-        self.total_caption = tk.StringVar(value="")
-        self.total_label = label(plan.body, "", size=11, font=FONT_SEMI, bg=plan.fill, textvariable=self.total_caption)
-        self.total_label.pack(anchor="w", pady=(14, 0))
-        label(plan.body, "Цены и требования здесь редактируются под выбранный сервер. План хранится отдельно для каждого штата.",
-              size=8, color="muted", bg=plan.fill, wraplength=800, justify="left").pack(anchor="w", pady=(6, 0))
+        # 3. the result
+        result = Block(body, "Сколько декодеров", "green")
+        result.pack(fill="x", pady=(0, 10))
+        line = tk.Frame(result.body, bg=result.fill)
+        line.pack(fill="x")
+        defense = tk.Frame(line, bg=result.fill)
+        defense.pack(side="left", padx=(0, 18))
+        tk.Label(defense, text="ЗАЩИТА", bg=result.fill, fg=MUTED, font=(BODY, 10)).pack(anchor="w")
+        self.defense = tk.Label(defense, text="0", bg=result.fill, fg=LIME, font=(HEAD, 44))
+        self.defense.pack(anchor="w")
+        self.defense_note = tk.Label(defense, text="", bg=result.fill, fg=MUTED, font=(BODY, 10))
+        self.defense_note.pack(anchor="w")
+        cards = tk.Frame(line, bg=result.fill)
+        cards.pack(side="left", fill="x", expand=True)
+        self.decoders: dict[str, tuple[tk.Label, tk.Label]] = {}
+        for index, (key, (color, _name)) in enumerate(RARITY.items()):
+            cards.grid_columnconfigure(index, weight=1, uniform="decoders")
+            card = tk.Frame(cards, bg=PANEL)
+            card.grid(row=0, column=index, sticky="nsew", padx=(0 if index == 0 else 8, 0))
+            tk.Frame(card, bg=color, height=3).pack(fill="x")
+            tk.Label(card, text=DECODER_LABELS[key].upper(), bg=PANEL, fg=color, font=(HEAD, 12)).pack(anchor="w", padx=10, pady=(8, 0))
+            number = tk.Label(card, text="0", bg=PANEL, fg=TEXT, font=(HEAD, 34))
+            number.pack(anchor="w", padx=10)
+            time_label = tk.Label(card, text="", bg=PANEL, fg=MUTED, font=(BODY, 11))
+            time_label.pack(anchor="w", padx=10, pady=(0, 8))
+            self.decoders[key] = (number, time_label)
+        tk.Label(result.body, text="Один декодер ставится 12 секунд. Проверь правила игры перед рейдом.",
+                 bg=result.fill, fg=DIM, font=(BODY, 10)).pack(anchor="w", pady=(10, 0))
         tk.Frame(body, height=24, bg=COLORS["bg"]).pack()
-        self._calculate()
-        self.refresh()
-
-    def _calculate(self) -> None:
-        if not hasattr(self, "raid_result"):
-            return
-        try:
-            key_index = self._structure_names.index(self.structure_var.get())
-            fuses = {key: int(value.get() or "0") for key, value in self.fuse_vars.items()}
-            result = raid_defense(self._structure_keys[key_index], fuses)
-        except ValueError as exc:
-            self.raid_result.set(str(exc))
-            return
-        lines = [f"Защита: {result['defense']} очков · ячеек с фьюзами: {result['fuse_count']}/{result['slots']}"]
-        for rarity in ("uncommon", "epic", "legendary"):
-            count = result["decoders"][rarity]
-            seconds = result["install_seconds"][rarity]
-            minutes, rest = divmod(seconds, 60)
-            duration = f"{minutes} мин {rest} сек" if minutes else f"{rest} сек"
-            lines.append(f"{DECODER_LABELS[rarity]}: {count} шт. · установка {duration}")
-        self.raid_result.set("\n".join(lines))
-
-    def _active_season(self) -> dict | None:
-        season = self.get_season()
-        return season if isinstance(season, dict) else None
+        self._pick(self.structure)
 
     @staticmethod
-    def _id(season: dict | None) -> int | None:
-        try:
-            return int(season["id"]) if season else None
-        except (KeyError, TypeError, ValueError):
-            return None
+    def _step_button(parent: tk.Misc, text: str, command) -> tk.Label:
+        button = tk.Label(parent, text=text, bg="#1b1b1a", fg=TEXT, font=(HEAD, 16), width=2, cursor="hand2",
+                          highlightthickness=1, highlightbackground="#3a3a37")
+        button.bind("<ButtonPress-1>", lambda _e: command())
+        return button
 
-    def _choose_season(self, _event=None) -> None:
-        self._selected_season_id = self._season_choice_ids.get(self.season_choice_var.get())
-        self._season_choice_initialized = True
-        self._signature = None
-        self.refresh()
+    # ---- actions ------------------------------------------------------------------------------------------------
+
+    def _pick(self, key: str) -> None:
+        self.structure = key
+        for name, tile in self.tiles.items():
+            on = name == key
+            tile.configure(highlightbackground=LIME if on else EDGE, bg="#22251a" if on else PANEL)
+            for child in tile.winfo_children():
+                child.configure(bg="#22251a" if on else PANEL)
+        slots = int(STRUCTURES[key]["slots"])
+        while sum(self.fuses.values()) > slots:   # a smaller structure: drop the extra fuses, the cheapest first
+            for rarity in ("uncommon", "epic", "legendary"):
+                if self.fuses[rarity] and sum(self.fuses.values()) > slots:
+                    self.fuses[rarity] -= 1
+        self._update()
+
+    def _change(self, rarity: str, step: int) -> None:
+        slots = int(STRUCTURES[self.structure]["slots"])
+        if step > 0 and sum(self.fuses.values()) >= slots:
+            return   # every cell is taken
+        self.fuses[rarity] = max(0, self.fuses[rarity] + step)
+        self._update()
+
+    def _update(self) -> None:
+        result = raid_defense(self.structure, self.fuses)
+        for key, label in self.counts.items():
+            label.configure(text=str(self.fuses[key]))
+        self.cells_note.configure(text=f"ЯЧЕЙКИ {result['fuse_count']} / {result['slots']}")
+        self.defense.configure(text=str(result["defense"]))
+        self.defense_note.configure(text=f"база {result['base']} + фьюзы {result['defense'] - result['base']}")
+        for key, (number, time_label) in self.decoders.items():
+            number.configure(text=str(result["decoders"][key]))
+            time_label.configure(text=f"установка {_duration(result['install_seconds'][key])}")
+        self._draw_cells()
+
+    def _draw_cells(self) -> None:
+        """The cells of the structure: filled with the colours of the fuses put in."""
+        canvas = self.cells
+        canvas.delete("all")
+        slots = int(STRUCTURES[self.structure]["slots"])
+        width = max(100, canvas.winfo_width())
+        gap = 3
+        size = min(28.0, (width - gap * (slots - 1)) / slots)
+        colors = [RARITY[k][0] for k in ("legendary", "epic", "uncommon") for _ in range(self.fuses[k])]
+        for index in range(slots):
+            x = index * (size + gap)
+            fill = colors[index] if index < len(colors) else "#1b1b1a"
+            canvas.create_rectangle(x, 0, x + size, 14, fill=fill, outline="#3a3a37" if index >= len(colors) else fill)
 
     def refresh(self) -> None:
-        current = self._active_season()
-        current_id = self._id(current)
-        history = self.get_history()
-        available = {self._id(item): item for item in history if self._id(item) is not None}
-        if not self._season_choice_initialized:
-            self._selected_season_id = current_id
-            self._season_choice_initialized = True
-        elif current_id != self._current_season_id and self._selected_season_id == self._current_season_id:
-            self._selected_season_id = current_id
-        self._current_season_id = current_id
-        if self._selected_season_id is not None and self._selected_season_id not in available:
-            self._selected_season_id = current_id
-        season = available.get(self._selected_season_id) if self._selected_season_id is not None else None
-        season_id = self._selected_season_id
-        choices = {"Без штата": None}
-        for season_item in history:
-            season_item_id = self._id(season_item)
-            if season_item_id is None:
-                continue
-            date = time.strftime("%d.%m.%y", time.localtime(season_item.get("started_at", 0)))
-            current_tag = " · текущий" if season_item_id == current_id else ""
-            caption = f"{season_item.get('code', 'EU-?????')} · {season_item.get('name', '')} · {date}{current_tag}"
-            choices[caption] = season_item_id
-        self._season_choice_ids = choices
-        labels = list(choices)
-        self.season_choice_box.configure(values=labels)
-        selected_label = next((name for name, value in choices.items() if value == season_id), "Без штата")
-        self.season_choice_var.set(selected_label)
-        rows = self.store.rows_for_season(season_id)
-        summary = plan_totals(rows)
-        signature = json.dumps([season_id, season.get("code") if season else None,
-                                season.get("name") if season else None, labels, rows],
-                               ensure_ascii=False, sort_keys=True, default=str)
-        if signature == self._signature:
-            return
-        self._signature = signature
-        self._season_id = season_id
-        if season:
-            self.season_caption.set(f"План для {season.get('code', 'штат')} · {season.get('name', '')}")
-        else:
-            self.season_caption.set("Штат не выбран · пока используется общий план без привязки к сезону")
-        for child in self.goals_host.winfo_children():
-            child.destroy()
-        if not rows:
-            label(self.goals_host, "Целей пока нет. Добавь предмет или этап развития — хаб посчитает оставшиеся расходы.",
-                  size=9, color="muted", bg=self.goals_host.cget("bg"), wraplength=780, justify="left").pack(anchor="w", pady=8)
-        for row in rows:
-            self._goal_row(row)
-        self.total_caption.set(
-            f"Исследования: {_money(summary['research'])}    Покупки: {_money(summary['purchase'])}    Всего: {_money(summary['total'])}"
-        )
-
-    def _goal_row(self, goal: dict) -> None:
-        row = tk.Frame(self.goals_host, bg=COLORS["surface_alt"], padx=12, pady=9)
-        row.pack(fill="x", pady=3)
-        content = tk.Frame(row, bg=COLORS["surface_alt"])
-        content.pack(side="left", fill="x", expand=True)
-        title = goal["title"] + (" · готово" if goal["researched"] and goal["owned"] >= goal["desired"] else "")
-        label(content, title, size=10, font=FONT_SEMI, bg=content.cget("bg")).pack(anchor="w")
-        remaining = max(0, goal["desired"] - goal["owned"])
-        notes = [f"Есть {goal['owned']} / нужно {goal['desired']}"]
-        if goal["tier"]:
-            notes.append(f"уровень {goal['tier']}")
-        if goal["sentence_years"]:
-            notes.append(f"срок {goal['sentence_years']} лет")
-        remaining_cost = (0 if goal["researched"] else goal["research_cost"]) + remaining * goal["unit_price"]
-        notes.append(f"осталось {_money(remaining_cost)}")
-        if goal["note"]:
-            notes.append(goal["note"])
-        label(content, " · ".join(notes), size=8, color="muted", bg=content.cget("bg"), wraplength=560,
-              justify="left").pack(anchor="w", pady=(3, 0))
-        actions = tk.Frame(row, bg=COLORS["surface_alt"])
-        actions.pack(side="right", padx=(10, 0))
-        PillButton(actions, "Изменить", lambda item=goal: self._edit_goal(item), style="ghost", padx=9, height=28, size=8).pack(side="left")
-        PillButton(actions, "Удалить", lambda item=goal: self._delete_goal(item), style="ghost", padx=9, height=28, size=8).pack(side="left", padx=(2, 0))
-
-    def _add_goal(self) -> None:
-        self._goal_dialog(None)
-
-    def _edit_goal(self, goal: dict) -> None:
-        self._goal_dialog(goal)
-
-    def _delete_goal(self, goal: dict) -> None:
-        if messagebox.askyesno("Удалить цель", f"Убрать «{goal['title']}» из плана?", parent=self):
-            self.store.remove(self._season_id, goal["id"])
-            self._signature = None
-            self.refresh()
-
-    def _goal_dialog(self, initial: dict | None) -> None:
-        dialog = tk.Toplevel(self)
-        dialog.title("Цель сезона")
-        dialog.transient(self.winfo_toplevel())
-        dialog.configure(bg=COLORS["bg"])
-        dialog.resizable(False, False)
-        box = Card(dialog, padding=(22, 18), radius=18)
-        box.pack(fill="both", expand=True, padx=12, pady=12)
-        label(box.body, "ЦЕЛЬ РАЗВИТИЯ", size=12, font=FONT_SEMI, color="muted", bg=box.fill).pack(anchor="w", pady=(0, 12))
-
-        fields = (
-            ("title", "Название", ""),
-            ("desired", "Нужно штук", "0"),
-            ("owned", "Уже есть", "0"),
-            ("research_cost", "Цена исследования · разово", "0"),
-            ("unit_price", "Цена покупки · за штуку", "0"),
-            ("tier", "Уровень торговца", ""),
-            ("sentence_years", "Требуемый срок · лет", "0"),
-            ("note", "Заметка", ""),
-        )
-        variables: dict[str, tk.StringVar] = {}
-        for key, title, default in fields:
-            line = tk.Frame(box.body, bg=box.fill)
-            line.pack(fill="x", pady=3)
-            label(line, title, size=9, color="muted", bg=box.fill).pack(side="left")
-            variable = tk.StringVar(value=str((initial or {}).get(key, default)))
-            variables[key] = variable
-            ttk.Entry(line, textvariable=variable, width=34 if key in ("title", "note", "tier") else 14).pack(side="right")
-        researched = tk.BooleanVar(value=bool((initial or {}).get("researched", False)))
-        ttk.Checkbutton(box.body, text="Исследование уже открыто", variable=researched).pack(anchor="w", pady=(8, 10))
-
-        def save() -> None:
-            payload = {key: variable.get().strip() for key, variable in variables.items()}
-            payload.update(researched=researched.get(), id=(initial or {}).get("id", ""))
-            try:
-                cleaned = normalize_goal(payload)
-                if initial:
-                    self.store.update(self._season_id, initial["id"], cleaned)
-                else:
-                    self.store.add(self._season_id, cleaned)
-            except ValueError as exc:
-                messagebox.showwarning("Проверь цель", str(exc), parent=dialog)
-                return
-            self._signature = None
-            self.refresh()
-            dialog.destroy()
-
-        buttons = tk.Frame(box.body, bg=box.fill)
-        buttons.pack(fill="x", pady=(8, 0))
-        PillButton(buttons, "Сохранить", save, style="primary", padx=16, height=34, size=9).pack(side="right")
-        PillButton(buttons, "Отмена", dialog.destroy, style="ghost", padx=14, height=34, size=9).pack(side="right", padx=(0, 8))
-        dialog.grab_set()
-        dialog.after(0, lambda: dialog.focus_force())
+        """Nothing changes by itself here."""
